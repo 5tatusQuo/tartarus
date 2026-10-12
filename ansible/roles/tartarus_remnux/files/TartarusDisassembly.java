@@ -10,7 +10,7 @@ public class TartarusDisassembly extends GhidraScript {
     protected void run() throws Exception {
         String[] args = getScriptArgs();
         if (args.length != 1) throw new IllegalArgumentException("one function name required");
-        Function function = getFunction(args[0]);
+        Function function = findFunctionByName(args[0]);
         InstructionIterator instructions = currentProgram.getListing().getInstructions(function.getBody(), true);
         int count = 0;
         while (instructions.hasNext() && count++ < 10000) {
@@ -19,7 +19,7 @@ public class TartarusDisassembly extends GhidraScript {
         }
     }
 
-    private Function getFunction(String name) {
+    private Function findFunctionByName(String name) {
         FunctionIterator functions = currentProgram.getFunctionManager().getFunctions(true);
         while (functions.hasNext()) {
             Function function = functions.next();

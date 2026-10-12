@@ -245,8 +245,13 @@ The sandbox runs the sample from an unprivileged account.
 Systemd applies process, memory, processor, duration, and file-size limits.
 
 The local `tartarus-mcp` server uses standard input and standard output.
-It supplies bounded telemetry, Ghidra, radare2, and current-session GDB operations.
-It does not supply a shell or a raw-command operation.
+It is the primary tool interface for the analysis agent.
+The analysis agent uses it to control telemetry, Ghidra, radare2, and GDB in the local range.
+It can also use Binary Ninja when you install Binary Ninja, provide a local license, and configure its MCP server.
+
+The [analysis-agent instructions](AGENTS.md) define the required MCP workflow and the evidence completion gate.
+The current MCP implementation does not yet provide the complete debugger, evidence-retention, or Binary Ninja interface that those instructions require.
+Treat a missing MCP operation as an implementation gap, not as a reason to stop the analysis at the deterministic collector output.
 
 ## Build and release controls
 
@@ -279,6 +284,8 @@ Packages, kernels, artifacts, images, templates, schemas, and source inputs must
 
 - [Portable public plan](PORTABLE-PUBLIC-PLAN.md)
 - [Security and operating constraints](SECURITY.md)
+- [Analysis-agent instructions](AGENTS.md)
+- [Analysis-agent validation](docs/ANALYSIS-AGENT-VALIDATION.md)
 - [Optional external traffic capture](docs/EXTERNAL-CAPTURE.md)
 
 Tartarus does not automatically change the Proxmox host for external traffic capture.

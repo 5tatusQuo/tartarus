@@ -108,11 +108,10 @@ def verify_range(
             sandbox,
             (
                 "curl",
-                "-k",
                 "-fsS",
                 "--connect-timeout",
                 "3",
-                "https://" + guests["elk"].address + ":5601",
+                "http://" + guests["elk"].address + ":5601",
             ),
         ),
     )
@@ -212,12 +211,11 @@ def _output_policy_accepts(remote: Remote) -> bool:
 
 
 def _clock_ok(remote: Remote) -> bool:
-    return (
-        remote.run(("timedatectl", "show", "--property=NTPSynchronized", "--value"))
-        .stdout.strip()
-        .lower()
-        == "yes"
-    )
+    before = time.time()
+    remote_epoch = int(remote.run(("date", "+%s")).stdout.strip())
+    after = time.time()
+    controller_midpoint = (before + after) / 2
+    return abs(remote_epoch - controller_midpoint) <= 5
 
 
 def _sandbox_clean(remote: Remote) -> bool:
