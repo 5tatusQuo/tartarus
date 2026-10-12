@@ -131,6 +131,17 @@ class Remote:
             timeout=timeout,
         )
 
+    def streaming_command(self, command: tuple[str, ...]) -> list[str]:
+        """Build an SSH command for a long-lived standard-I/O service."""
+        if not self._controller_key().is_file():
+            raise TartarusError(f"controller key is unavailable for {self.guest.name}")
+        remote_command = "exec " + " ".join(shlex.quote(part) for part in command)
+        return [
+            *self._ssh_base(),
+            f"{self.guest.user}@{self.guest.address}",
+            remote_command,
+        ]
+
     def _ssh_base(self) -> list[str]:
         executable = shutil.which("ssh")
         if not executable:

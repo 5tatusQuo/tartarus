@@ -340,7 +340,7 @@ def _reverse_engineering_versions_ok(remnux: Remote) -> bool:
         )
     )
     return (
-        "6.0.4" in remnux.run(("r2", "-v")).stdout
+        "6.1.8" in remnux.run(("r2", "-v")).stdout
         and "15.2" in remnux.run(("gdb", "--version")).stdout.splitlines()[0]
         and "7.2.2" in _command_version(remnux, ("zeek", "--version"))
         and "1.3.2" in _command_version(remnux, ("inetsim", "--version"))

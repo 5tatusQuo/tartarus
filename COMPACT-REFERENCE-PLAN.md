@@ -78,8 +78,7 @@ Required locked components include:
 - Tartarus-owned Debian 12 and Ubuntu 20.04/REMnux templates
 - Elastic Stack and Elastic Agent 9.5.5
 - `badsectorlabs.ludus_remnux` 1.0.1
-- `radareorg/radare2-mcp` 1.8.8
-- `BeaCox/gdb-mcp` 0.4.0
+- The local Tartarus MCP gateway plus the native radare2 MCP server
 - Pinned Ghidra, radare2, GDB, INetSim, Zeek, and sandbox package versions recorded in `versions.lock.yml`
 
 The REMnux role is applied only to its supported Ubuntu 20.04 base. Its upstream requirements explicitly name that template; Tartarus must fail on a distribution mismatch rather than attempt an untested installation. See the [REMnux Ludus role](https://github.com/badsectorlabs/ludus_remnux).
@@ -123,12 +122,13 @@ Elasticsearch stores normalized events, artifact metadata, hashes, run boundarie
 
 An inert copy of each ELF is staged on REMnux and hash-verified. It is never executed there.
 
-- A constrained headless Ghidra adapter exposes import, functions, disassembly, decompilation, strings, and cross-references for the current sample and project directory.
-- radare2 MCP runs in read-only/sandbox mode with raw command execution disabled.
-- GDB MCP permits current-session creation, breakpoints, stepping, continue, registers, stack inspection, and bounded memory reads. Shell escapes, arbitrary writes, unrelated process attachment, and unrestricted GDB commands are rejected.
+- The headless Ghidra adapter exposes import, functions, disassembly, decompilation, strings, cross-references, and agent-supplied Java analysis scripts for the current sample and project.
+- The native radare2 MCP server exposes its analysis, function, string, import, export, section, symbol, cross-reference, decompilation, and disassembly tools through the local `tartarus-r2mcp` proxy.
+- The GDB adapter accepts multi-command analysis sequences for the current sandbox `gdbserver`. It supports breakpoints, watchpoints, stepping, threads, registers, stacks, memory, signals, and controlled state changes.
+- Every MCP tool result is stored as a hashed artifact in the current run manifest.
 - MCP services use local stdio or stdio over SSH. No MCP listener binds to a malware-facing guest interface.
 
-The controller exposes bounded operations rather than unrestricted shell access:
+The controller exposes lifecycle commands separately from the analysis MCP tools:
 
 ```text
 tartarus range prepare|deploy|status|verify|destroy
@@ -182,9 +182,9 @@ Sample strings, debugger output, disassembly, packet contents, and log messages 
 
 - Observe benign process execution, a persistence-path write, journal/kernel output, and metrics in Elasticsearch.
 - Observe sandbox-to-REMnux DNS and HTTP activity in INetSim logs and PCAP.
-- Produce bounded `strace` and filesystem-difference artifacts.
+- Produce size-controlled `strace` and filesystem-difference artifacts.
 - Disassemble a benign ELF through Ghidra and radare2 MCP.
-- Set a breakpoint, step, and inspect registers through GDB MCP; prove the port is restricted and closes afterward.
+- Set a breakpoint, step, inspect registers and memory, and query mappings through GDB MCP; prove the port closes afterward.
 - Detect deliberate audit loss, packet drops, output backpressure, and quota exhaustion.
 
 ### Recovery

@@ -4,7 +4,7 @@
 
 Use these instructions when an AI agent analyzes a sample or prepares analysis material for a report.
 The AI agent is the analysis control plane.
-Local MCP tools are its primary interface to Tartarus, Ghidra, radare2, GDB, Binary Ninja when available, and telemetry.
+Local MCP tools are its primary interface to Tartarus, Ghidra, radare2, GDB, and telemetry.
 Tartarus commands, manifests, hashes, and collectors provide deterministic sensors and actuators.
 They do not decide what the sample does or when the investigation is complete.
 
@@ -45,9 +45,8 @@ Do not skip directly from collection to `analysis_complete`.
 - At `intake`, enumerate the connected local MCP servers and their available tools. Record the inventory and any missing capability in the analysis journal.
 - Use MCP as the normal interface for interactive analysis. Do not reduce an investigation to the default deterministic collector when MCP tools can answer the question.
 - Use the Ghidra MCP for import, analysis, function discovery, decompilation, disassembly, references, data types, symbols, call graphs, and scripting needed by the investigation.
-- Use the radare2 MCP for broad program inventory, independent function-boundary checks, strings, imports, sections, graphs, intermediate-language inspection, and scripting needed by the investigation.
+- Use the native radare2 MCP server for broad program inventory, independent function-boundary checks, strings, imports, sections, graphs, intermediate-language inspection, decompilation, and other radare2 analysis needed by the investigation.
 - Use the GDB MCP for launch and attach lifecycle, breakpoints, watchpoints, stepping, threads, registers, stack frames, mappings, memory, signals, and controlled state changes needed by the investigation.
-- Use the Binary Ninja MCP when Binary Ninja and a valid local license are installed. Treat it as another analysis view, not as a required dependency. If it is unavailable, record that fact and continue with Ghidra and radare2.
 - Use the telemetry MCP to search and correlate process, system-call, file, network, audit, journal, and Elastic evidence for the current run.
 - Retain material MCP inputs and outputs as run artifacts with timestamps and hashes. A chat transcript alone is not evidence retention.
 - When an MCP server lacks an operation needed to test a material hypothesis, record a capability gap and extend the local MCP interface before declaring the analysis complete.

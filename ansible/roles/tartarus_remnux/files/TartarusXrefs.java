@@ -18,8 +18,7 @@ public class TartarusXrefs extends GhidraScript {
         }
         if (target == null) throw new IllegalArgumentException("function not found");
         ReferenceIterator references = currentProgram.getReferenceManager().getReferencesTo(target.getEntryPoint());
-        int count = 0;
-        while (references.hasNext() && count++ < 10000) {
+        while (references.hasNext()) {
             Reference reference = references.next();
             println(reference.getFromAddress() + "\t" + reference.getReferenceType());
         }

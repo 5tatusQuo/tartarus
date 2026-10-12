@@ -21,8 +21,7 @@ public class TartarusDecompile extends GhidraScript {
         decompiler.openProgram(currentProgram);
         DecompileResults result = decompiler.decompileFunction(target, 30, monitor);
         if (!result.decompileCompleted()) throw new IllegalStateException("decompilation failed");
-        String output = result.getDecompiledFunction().getC();
-        println(output.substring(0, Math.min(output.length(), 4000000)));
+        println(result.getDecompiledFunction().getC());
         decompiler.dispose();
     }
 }

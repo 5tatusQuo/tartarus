@@ -20,6 +20,7 @@ dev = ["pytest==8.4.2", "ruff==0.17.0"]
 [project.scripts]
 tartarus = "tartarus.cli:main"
 tartarus-mcp = "tartarus.mcp_gateway:main"
+tartarus-r2mcp = "tartarus.r2mcp_proxy:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["controller/tartarus"]

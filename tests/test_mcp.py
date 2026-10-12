@@ -1,16 +1,32 @@
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from tartarus.errors import TartarusError
-from tartarus.mcp_gateway import FUNCTION_RE, TOOLS, _require_debug_run, _string
+from tartarus.mcp_gateway import (
+    FUNCTION_RE,
+    TOOLS,
+    _gdb_execute,
+    _record_tool_result,
+    _require_debug_run,
+    _script_name,
+    _string,
+)
 
 
-def test_mcp_surface_has_no_raw_command_tool() -> None:
+def test_mcp_surface_covers_ghidra_gdb_and_telemetry() -> None:
     names = {tool["name"] for tool in TOOLS}
+    assert {
+        "analysis_capabilities",
+        "telemetry_search",
+        "ghidra_script",
+        "gdb_execute",
+    } <= names
+    assert not any(name.startswith("radare2_") for name in names)
     assert "shell" not in names
-    assert "radare2_command" not in names
-    assert {"ghidra_decompile", "gdb_breakpoint_step", "telemetry_search"} <= names
+    for tool in TOOLS:
+        assert {"range_id", "run_id"} <= set(tool["inputSchema"]["required"])
 
 
 def test_sample_derived_function_names_are_constrained() -> None:
@@ -20,13 +36,114 @@ def test_sample_derived_function_names_are_constrained() -> None:
         _string({}, "run_id")
 
 
-def test_gdb_requires_current_approved_debug_run(tmp_path: Path) -> None:
-    run_dir = tmp_path / "case" / "run-1"
+def test_gdb_requires_a_debug_run() -> None:
+    _require_debug_run({"debug_session": True})
+    with pytest.raises(TartarusError, match="gdbserver"):
+        _require_debug_run({"debug_session": False})
+
+
+def test_script_names_match_the_requested_analysis_engine() -> None:
+    assert _script_name({"script_name": "AgentGraph.java"}, ".java") == "AgentGraph.java"
+    with pytest.raises(TartarusError):
+        _script_name({"script_name": "../AgentGraph.java"}, ".java")
+    with pytest.raises(TartarusError):
+        _script_name({"script_name": "agent_analysis.py"}, ".java")
+
+
+class RecordingRemote:
+    def __init__(self) -> None:
+        self.command: tuple[str, ...] = ()
+
+    def run(self, command, *, timeout):
+        self.command = command
+        assert timeout == 900
+        return SimpleNamespace(stdout="registers and stack\n")
+
+
+def test_gdb_execute_preserves_a_multi_command_analysis_sequence() -> None:
+    remote = RecordingRemote()
+    output = _gdb_execute(
+        remote,
+        "10.1.30.30",
+        "/var/spool/tartarus/static/run-1/sample",
+        ["break main", "continue", "info threads", "x/32gx $sp"],
+    )
+
+    assert output == "registers and stack\n"
+    rendered = list(remote.command)
+    assert "target remote 10.1.30.30:2345" in rendered
+    for value in ("break main", "continue", "info threads", "x/32gx $sp"):
+        assert value in rendered
+
+
+def test_each_tool_result_is_hashed_and_added_to_the_run_manifest(tmp_path: Path) -> None:
+    run_dir = tmp_path / "case-1" / "run-1"
     run_dir.mkdir(parents=True)
-    manifest = {"run_id": "run-1", "range_id": "T1", "status": "running", "debug_session": True}
-    (run_dir / "run.json").write_text(json.dumps(manifest), encoding="utf-8")
-    _require_debug_run(tmp_path, "T1", "run-1")
-    manifest["debug_session"] = False
-    (run_dir / "run.json").write_text(json.dumps(manifest), encoding="utf-8")
-    with pytest.raises(TartarusError, match="approved debug run"):
-        _require_debug_run(tmp_path, "T1", "run-1")
+    run_file = run_dir / "run.json"
+    run = {
+        "schema_version": "1.0",
+        "case_id": "case-1",
+        "run_id": "run-1",
+        "sample": {"sha256": "a" * 64},
+        "telemetry_profile": "standard",
+        "tartarus_release": "test",
+        "deployment_manifest_sha256": "b" * 64,
+        "status": "running",
+        "started_at": "2026-10-12T00:00:00Z",
+        "range_id": "T1",
+        "debug_session": True,
+        "artifacts": [],
+        "visibility_gaps": [],
+    }
+    run_file.write_text(json.dumps(run), encoding="utf-8")
+
+    result = _record_tool_result(
+        run_file,
+        run,
+        "radare2_mcp_show_info",
+        {"file_path": "/var/spool/tartarus/static/run-1/sample"},
+        "analysis output",
+        None,
+    )
+
+    assert result["ok"] is True
+    artifact = json.loads(run_file.read_text(encoding="utf-8"))["artifacts"][0]
+    evidence = run_dir / artifact["relative_path"]
+    assert evidence.is_file()
+    assert result == json.loads(evidence.read_text(encoding="utf-8"))
+    assert len(artifact["sha256"]) == 64
+
+
+def test_failed_tool_result_is_also_retained(tmp_path: Path) -> None:
+    run_dir = tmp_path / "case-1" / "run-1"
+    run_dir.mkdir(parents=True)
+    run_file = run_dir / "run.json"
+    run = {
+        "schema_version": "1.0",
+        "case_id": "case-1",
+        "run_id": "run-1",
+        "sample": {"sha256": "a" * 64},
+        "telemetry_profile": "standard",
+        "tartarus_release": "test",
+        "deployment_manifest_sha256": "b" * 64,
+        "status": "running",
+        "started_at": "2026-10-12T00:00:00Z",
+        "range_id": "T1",
+        "debug_session": True,
+        "artifacts": [],
+        "visibility_gaps": [],
+    }
+    run_file.write_text(json.dumps(run), encoding="utf-8")
+
+    result = _record_tool_result(
+        run_file,
+        run,
+        "ghidra_script",
+        {"range_id": "T1", "run_id": "run-1"},
+        None,
+        "script failed",
+    )
+
+    assert result["ok"] is False
+    assert result["error"] == "script failed"
+    assert len(json.loads(run_file.read_text(encoding="utf-8"))["artifacts"]) == 1

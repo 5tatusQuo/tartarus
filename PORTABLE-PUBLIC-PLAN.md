@@ -123,7 +123,7 @@ Profiles change capacity and retention defaults only. Containment, evidence inte
 
 - Supply Tartarus-owned Packer definitions for Debian 12 and Ubuntu 20.04/REMnux rather than binding to an operator's similarly named template.
 - Pin ISO URLs and hashes, operating-system packages, Elastic artifacts, integration assets, Python dependencies, Ghidra scripts, and MCP adapters in `versions.lock.yml`.
-- Pin Elastic Stack and Agent 9.5.5, the REMnux Ludus role 1.0.1, radare2 MCP 1.8.8, and GDB MCP 0.4.0 for the first release.
+- Pin Elastic Stack and Agent 9.5.5, the REMnux Ludus role 1.0.1, and the analysis-engine versions used by the local Tartarus MCP gateway.
 - Record every resolved URL, hash, package version, template build identifier, and Tartarus commit in `DeploymentManifest`.
 - Verify upstream checksums before installation and Tartarus-recorded hashes before reuse from cache.
 - Fail on an operating-system, architecture, kernel, dependency, or checksum mismatch; do not silently upgrade or fall back.
@@ -224,11 +224,12 @@ Stable versioned JSON schemas:
 - `ApprovalRequest`
 - `ToolResult`
 
-The local MCP gateway exposes only bounded controller operations. It cannot translate freeform model output into a shell command.
+The local MCP gateway exposes analysis-engine operations for the current run. It does not use a cloud service.
 
-- Ghidra uses constrained headless scripts limited to the current hashed sample and project directory.
-- radare2 MCP runs read-only with sandboxing and without unrestricted raw commands.
-- GDB MCP can control only the current short-lived sandbox `gdbserver`, with bounded memory reads and no shell escape or arbitrary write operations.
+- Ghidra supports its standard analysis operations and agent-supplied Java scripts in the current project.
+- The native radare2 MCP server runs on REMnux and is connected to the agent through the local `tartarus-r2mcp` standard-input and standard-output proxy.
+- GDB supports multi-command debugging of the current short-lived sandbox `gdbserver`, including controlled state changes.
+- Each MCP request and result is retained as a hashed run artifact.
 - MCP uses stdio or stdio over SSH; no listener binds to an analysis-facing interface.
 
 Root execution, external network exceptions, destructive range removal, quota overrides, and changes to containment policy require explicit operator approval. All sample-derived content is treated as untrusted data.

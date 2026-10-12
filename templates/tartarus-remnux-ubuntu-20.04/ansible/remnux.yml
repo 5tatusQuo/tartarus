@@ -50,12 +50,9 @@
         - name: r2mcp_1.8.8_amd64.deb
           url: https://github.com/radareorg/radare2-mcp/releases/download/1.8.8/r2mcp_1.8.8_amd64.deb
           digest: 1de404fd88881fd2a543c6c4e552a688f2120966c809da4bbfec9594ec669000
-        - name: gdb-mcp-v0.4.0.tar.gz
-          url: https://codeload.github.com/BeaCox/gdb-mcp/tar.gz/250f670aee9bc32a95522e28b8c499d2e7b9d107
-          digest: ed7738eaf0607576148cd83c525fefcbec173b21174c570e1b9f40c778aa658e
-        - name: radare2_6.0.4_amd64.deb
-          url: https://github.com/radareorg/radare2/releases/download/6.0.4/radare2_6.0.4_amd64.deb
-          digest: 5bed66a800933455569a03e607727c2121a4c632a74fe280c0b8c71bd2010b7b
+        - name: radare2_6.1.8_amd64.deb
+          url: https://github.com/radareorg/radare2/releases/download/6.1.8/radare2_6.1.8_amd64.deb
+          digest: 91e64c672e65521758c0deb0f70d98ac90f0a78eb654d8bd0d894dd5735130e3
         - name: gdb-15.2.tar.xz
           url: https://ftp.gnu.org/gnu/gdb/gdb-15.2.tar.xz
           digest: 83350ccd35b5b5a0cba6b334c41294ea968158c573940904f00b92f76345314d

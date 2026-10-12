@@ -12,8 +12,7 @@ public class TartarusDisassembly extends GhidraScript {
         if (args.length != 1) throw new IllegalArgumentException("one function name required");
         Function function = findFunctionByName(args[0]);
         InstructionIterator instructions = currentProgram.getListing().getInstructions(function.getBody(), true);
-        int count = 0;
-        while (instructions.hasNext() && count++ < 10000) {
+        while (instructions.hasNext()) {
             Instruction instruction = instructions.next();
             println(instruction.getAddress() + "\t" + instruction.toString());
         }

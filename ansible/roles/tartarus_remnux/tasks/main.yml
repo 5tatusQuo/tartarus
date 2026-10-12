@@ -68,10 +68,9 @@
       results:
         - {name: zeek-7.2.2.tar.gz, url: https://github.com/zeek/zeek/releases/download/v7.2.2/zeek-7.2.2.tar.gz, digest: 2b1df248f94199a1684e1c460d64cf1c5e49d7471c2b562f942ac5fbe9805893}
         - {name: r2mcp_1.8.8_amd64.deb, url: https://github.com/radareorg/radare2-mcp/releases/download/1.8.8/r2mcp_1.8.8_amd64.deb, digest: 1de404fd88881fd2a543c6c4e552a688f2120966c809da4bbfec9594ec669000}
-        - {name: radare2_6.0.4_amd64.deb, url: https://github.com/radareorg/radare2/releases/download/6.0.4/radare2_6.0.4_amd64.deb, digest: 5bed66a800933455569a03e607727c2121a4c632a74fe280c0b8c71bd2010b7b}
+        - {name: radare2_6.1.8_amd64.deb, url: https://github.com/radareorg/radare2/releases/download/6.1.8/radare2_6.1.8_amd64.deb, digest: 91e64c672e65521758c0deb0f70d98ac90f0a78eb654d8bd0d894dd5735130e3}
         - {name: ghidra_11.4.2_PUBLIC_20250826.zip, url: https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_11.4.2_build/ghidra_11.4.2_PUBLIC_20250826.zip, digest: 795a02076af16257bd6f3f4736c4fc152ce9ff1f95df35cd47e2adc086e037a6}
         - {name: OpenJDK21U-jdk_x64_linux_hotspot_21.0.12.1_1.tar.gz, url: https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jdk_x64_linux_hotspot_21.0.12.1_1.tar.gz, digest: ce79869e1307ed8ee1e2baa86a412b1eb5b75d10a01006d788a6f968bcfaee94}
-        - {name: gdb-mcp-v0.4.0.tar.gz, url: https://codeload.github.com/BeaCox/gdb-mcp/tar.gz/250f670aee9bc32a95522e28b8c499d2e7b9d107, digest: ed7738eaf0607576148cd83c525fefcbec173b21174c570e1b9f40c778aa658e}
         - {name: gdb-15.2.tar.xz, url: https://ftp.gnu.org/gnu/gdb/gdb-15.2.tar.xz, digest: 83350ccd35b5b5a0cba6b334c41294ea968158c573940904f00b92f76345314d}
 
 - name: Verify cached analysis artifacts
@@ -81,10 +80,9 @@
   loop:
     - {name: zeek-7.2.2.tar.gz, digest: 2b1df248f94199a1684e1c460d64cf1c5e49d7471c2b562f942ac5fbe9805893}
     - {name: r2mcp_1.8.8_amd64.deb, digest: 1de404fd88881fd2a543c6c4e552a688f2120966c809da4bbfec9594ec669000}
-    - {name: radare2_6.0.4_amd64.deb, digest: 5bed66a800933455569a03e607727c2121a4c632a74fe280c0b8c71bd2010b7b}
+    - {name: radare2_6.1.8_amd64.deb, digest: 91e64c672e65521758c0deb0f70d98ac90f0a78eb654d8bd0d894dd5735130e3}
     - {name: ghidra_11.4.2_PUBLIC_20250826.zip, digest: 795a02076af16257bd6f3f4736c4fc152ce9ff1f95df35cd47e2adc086e037a6}
     - {name: OpenJDK21U-jdk_x64_linux_hotspot_21.0.12.1_1.tar.gz, digest: ce79869e1307ed8ee1e2baa86a412b1eb5b75d10a01006d788a6f968bcfaee94}
-    - {name: gdb-mcp-v0.4.0.tar.gz, digest: ed7738eaf0607576148cd83c525fefcbec173b21174c570e1b9f40c778aa658e}
     - {name: gdb-15.2.tar.xz, digest: 83350ccd35b5b5a0cba6b334c41294ea968158c573940904f00b92f76345314d}
   register: tartarus_remnux_cached_artifacts
 
@@ -149,10 +147,10 @@
 
 - name: Install pinned radare2
   ansible.builtin.apt:
-    deb: /var/cache/tartarus/radare2_6.0.4_amd64.deb
+    deb: /var/cache/tartarus/radare2_6.1.8_amd64.deb
     state: present
 
-- name: Install pinned radare2 MCP package
+- name: Install pinned radare2 MCP server
   ansible.builtin.apt:
     deb: /var/cache/tartarus/r2mcp_1.8.8_amd64.deb
     state: present
@@ -197,13 +195,6 @@
     dest: /usr/local/bin/analyzeHeadless
     state: link
 
-- name: Install pinned GDB MCP source for the constrained gateway
-  ansible.builtin.unarchive:
-    src: /var/cache/tartarus/gdb-mcp-v0.4.0.tar.gz
-    dest: /opt/tartarus
-    remote_src: true
-    creates: /opt/tartarus/gdb-mcp-250f670aee9bc32a95522e28b8c499d2e7b9d107
-
 - name: Unpack pinned GDB source
   ansible.builtin.unarchive:
     src: /var/cache/tartarus/gdb-15.2.tar.xz
@@ -234,6 +225,11 @@
     src: /opt/gdb-15.2/bin/gdb
     dest: /usr/local/bin/gdb
     state: link
+
+- name: Remove the obsolete standalone GDB MCP source
+  ansible.builtin.file:
+    path: /opt/tartarus/gdb-mcp-250f670aee9bc32a95522e28b8c499d2e7b9d107
+    state: absent
 
 - name: Read pinned analysis tool versions
   ansible.builtin.command:
@@ -271,6 +267,14 @@
     group: adm
     mode: "0750"
 
+- name: Permit traversal to analyst-owned spool directories
+  ansible.builtin.file:
+    path: /var/spool/tartarus
+    state: directory
+    owner: root
+    group: adm
+    mode: "0751"
+
 - name: Create inert static-analysis and Ghidra directories
   ansible.builtin.file:
     path: "{{ item }}"
@@ -290,7 +294,7 @@
     group: root
     mode: "0755"
 
-- name: Install constrained headless Ghidra scripts
+- name: Install headless Ghidra analysis scripts
   ansible.builtin.copy:
     src: "{{ item }}"
     dest: "/opt/tartarus/ghidra-scripts/{{ item }}"

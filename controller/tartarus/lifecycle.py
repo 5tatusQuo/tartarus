@@ -179,8 +179,12 @@ def stop_remote_run(
     config: Config, run_file: Path, *, approve_quota_override: bool = False
 ) -> dict[str, object]:
     run = load_json(run_file)
-    if run.get("status") not in {"starting", "running"} or not run.get("range_id"):
+    if run.get("status") not in {"starting", "running", "stopping"} or not run.get("range_id"):
         raise TartarusError("run is not active on a range")
+    if run["status"] != "stopping":
+        run["status"] = "stopping"
+        validate("run-manifest", run)
+        atomic_json(run_file, run)
     guests = range_guests(config, run["range_id"])
     sandbox = Remote(config, guests["sandbox"])
     remnux = Remote(config, guests["remnux"])
@@ -261,6 +265,13 @@ def stop_remote_run(
         "collected"
         if not run["visibility_gaps"] and run["recovery_verified"]
         else "collected_with_gaps"
+    )
+    latest_run = load_json(run_file)
+    known_paths = {artifact["relative_path"] for artifact in run["artifacts"]}
+    run["artifacts"].extend(
+        artifact
+        for artifact in latest_run["artifacts"]
+        if artifact["relative_path"] not in known_paths
     )
     validate("run-manifest", run)
     atomic_json(run_file, run)

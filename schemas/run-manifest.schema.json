@@ -22,7 +22,7 @@
     "recovery_verified": {"type": "boolean"},
     "debug_session": {"type": "boolean"},
     "deployment_manifest_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
-    "status": {"enum": ["prepared", "starting", "running", "collected", "collected_with_gaps", "failed"]},
+    "status": {"enum": ["prepared", "starting", "running", "stopping", "collected", "collected_with_gaps", "failed"]},
     "started_at": {"type": "string", "format": "date-time"},
     "stopped_at": {"type": "string", "format": "date-time"},
     "artifacts": {

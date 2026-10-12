@@ -246,12 +246,13 @@ Systemd applies process, memory, processor, duration, and file-size limits.
 
 The local `tartarus-mcp` server uses standard input and standard output.
 It is the primary tool interface for the analysis agent.
-The analysis agent uses it to control telemetry, Ghidra, radare2, and GDB in the local range.
-It can also use Binary Ninja when you install Binary Ninja, provide a local license, and configure its MCP server.
+The analysis agent uses it to control telemetry, Ghidra, and GDB in the local range.
+The `tartarus-r2mcp` proxy connects the agent to the native radare2 MCP server on REMnux.
 
 The [analysis-agent instructions](AGENTS.md) define the required MCP workflow and the evidence completion gate.
-The current MCP implementation does not yet provide the complete debugger, evidence-retention, or Binary Ninja interface that those instructions require.
-Treat a missing MCP operation as an implementation gap, not as a reason to stop the analysis at the deterministic collector output.
+The gateways support native radare2 MCP tools, GDB command sequences, agent-supplied Ghidra scripts, run-scoped telemetry searches, and capability discovery.
+They record each MCP call as a hashed run artifact before they return the result.
+See [MCP client configuration](mcp/README.md#client-configuration) for both local server commands.
 
 ## Build and release controls
 

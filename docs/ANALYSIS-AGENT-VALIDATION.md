@@ -32,14 +32,28 @@ The first Ghidra disassembly request failed with Ghidra 11.4 because `TartarusDi
 
 The range verifier also had two unrelated false failures. It used the obsolete HTTPS Kibana address, and it required host NTP synchronization even when the guest clock was correct. The verifier now uses the local HTTP Kibana address and checks the actual clock difference.
 
-## Capability gaps
+## MCP integration validation
 
-This test has the state `analysis_incomplete` against the full contract in `AGENTS.md`:
+A second run, `mcp-e2e-20261012`, started the same benign fixture with the `deep` telemetry profile and a GDB session. The test used the JSON-RPC standard-input and standard-output interface of `tartarus-mcp`. It did not call gateway implementation functions directly.
 
-- The current GDB MCP has only register, single breakpoint-and-step, and small memory-read operations. The test run did not enable its debug session.
-- The gateway does not retain each material MCP request and response as a hashed run artifact.
-- The telemetry search did not isolate the sample activity cleanly from analysis and QEMU guest-agent activity.
-- Binary Ninja and a Binary Ninja MCP server are not installed.
-- The current Ghidra MCP does not expose all operations listed in the agent contract.
+The live test completed these operations:
 
-These are MCP implementation gaps. They are not limits that the analysis agent must accept. Complete these interfaces before the reporting agent treats a future analysis as complete.
+- Discover Ghidra 11.4.2, radare2, GDB 15.2, and telemetry.
+- Upload and run an agent-supplied Ghidra Java script. The script confirmed the fixture SHA-256 and counted 1,830 Ghidra functions.
+- Decompile, disassemble, and get cross-references for `entry` through the standard Ghidra tools.
+- Connect GDB to the sandbox `gdbserver`, inspect threads, registers, stack memory, instructions, and mappings, set a breakpoint, step one instruction, and detach.
+- Check local Elastic health and retrieve events scoped to the run identifier.
+
+The gateway created 12 ToolResult artifacts during the live test, including the first failed custom Ghidra request. All 12 SHA-256 values matched their run-manifest records. The failure identified that Ghidra uses a semicolon between custom script directories. The corrected request succeeded.
+
+The audit found that `r2mcp` 1.8.8 was not ABI-compatible with radare2 6.0.4. Tartarus now pins radare2 6.1.8, the release used by the radare2 MCP build, and connects to the native MCP server through `tartarus-r2mcp`.
+
+A third run, `r2mcp-e2e-20261012b`, validated the native `Radare2 MCP Connector` 1.8.8 through the local proxy. The native server advertised 42 radare2 tools in two result pages. It opened the fixture, completed level-2 analysis, found 1,688 functions, identified `main` and `entry0`, and returned binary information, entry points, decompiler inventory, decompilation, disassembly, and cross-references.
+
+The first native request also found a deployment permission defect. The REMnux analysis user owned the static-analysis directory but could not traverse `/var/spool/tartarus`. The REMnux role now permits traversal of that parent while it keeps each child directory access-controlled. The repeated native session succeeded.
+
+The native test created 23 radare2 MCP ToolResult artifacts and one `analysis_capabilities` artifact. The retained artifacts include failed and successful calls. The manifest recorded a SHA-256 value and byte size for each artifact.
+
+The first teardown exposed a stale Tartarus role on the Ludus server. The stale role tried to install radare2 6.0.4 after the live upgrade to 6.1.8. Ludus rejected the downgrade, and Tartarus correctly recorded `collected_with_gaps` and `sandbox_rebuild_failed`. The controller then updated the registered Tartarus source and completed a forced deployment with the current role.
+
+The final run, `r2mcp-e2e-20261012c`, repeated native tool discovery and analysis after that deployment. It discovered all 42 tools across both MCP result pages. It retained eight native radare2 ToolResult artifacts and one capability artifact. All nine artifact hashes matched the manifest. The final run has `status: collected`, `recovery_verified: true`, and no visibility gaps. Its rebuilt sandbox passed the complete range verifier.
