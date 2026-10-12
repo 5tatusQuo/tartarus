@@ -1,5 +1,9 @@
 # Tartarus
 
+<p align="center">
+  <img src="assets/tartarus-icon.png" alt="Tartarus project icon" width="192">
+</p>
+
 Tartarus is a portable controller for a contained Ludus Linux analysis range.
 It analyzes Executable and Linkable Format (ELF) files.
 
