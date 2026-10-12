@@ -36,6 +36,7 @@ from .release import (
     write_prepare_manifest,
 )
 from .remote import Remote, range_guests
+from .reporting import generate_agent_report
 from .telemetry import record_lifecycle, telemetry_health, telemetry_search
 from .util import atomic_json, load_json, safe_id, utc_now
 from .verify import verify_range
@@ -703,7 +704,7 @@ def cmd_run_stop(args: argparse.Namespace) -> None:
         run_file,
         approve_quota_override=args.approve_quota_override,
     )
-    _generate_report(run_file, run_file.parent / "report.md")
+    generate_agent_report(run_file, run_file.parent / "report.md")
     completed = load_json(run_file)
     record_lifecycle(
         config,
@@ -796,53 +797,21 @@ def cmd_report(args: argparse.Namespace) -> None:
             "case_id": args.case_id,
             "run_id": args.run_id,
             "output": str(output),
+            "agent": "codex",
+            "model": args.model or "configured Codex default",
+            "reasoning_effort": args.reasoning_effort,
+            "local_provider": args.local_provider or "configured Codex provider",
         },
     )
-    _generate_report(run_file, output)
-    print(output)
-
-
-def _generate_report(run_file: Path, output: Path) -> None:
-    run = load_json(run_file)
-    if output.exists():
-        raise TartarusError(f"refusing to overwrite report: {output}")
-    artifact_lines: list[str] = []
-    for item in run["artifacts"]:
-        artifact_lines.append(
-            f"- `{item['relative_path']}` ({item['size']} bytes, {item['collection_status']})"
+    emit(
+        generate_agent_report(
+            run_file,
+            output,
+            model=args.model,
+            reasoning_effort=args.reasoning_effort,
+            local_provider=args.local_provider,
         )
-    lines = [
-        f"# Tartarus run {run['run_id']}",
-        "",
-        f"- Case: `{run['case_id']}`",
-        f"- Sample: `{run['sample']['sample_id']}`",
-        f"- Status: `{run['status']}`",
-        f"- Telemetry profile: `{run['telemetry_profile']}`",
-        f"- Tartarus release: `{run['tartarus_release']}`",
-        f"- Recovery verified: `{run.get('recovery_verified', False)}`",
-        "",
-        "## Artifacts",
-        "",
-    ]
-    lines.extend(artifact_lines or ["- None"])
-    lines.extend(["", "## Visibility gaps", ""])
-    lines.extend(f"- {gap}" for gap in run["visibility_gaps"])
-    if not run["visibility_gaps"]:
-        lines.append("- None observed")
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    output.chmod(0o600)
-    if output.is_relative_to(run_file.parent):
-        record = {
-            "relative_path": output.relative_to(run_file.parent).as_posix(),
-            "media_type": "text/markdown",
-            "size": output.stat().st_size,
-            "collection_status": "collected",
-            "collected_at": utc_now(),
-        }
-        run["artifacts"].append(record)
-        validate("run-manifest", run)
-        atomic_json(run_file, run)
+    )
 
 
 def parser() -> argparse.ArgumentParser:
@@ -977,6 +946,11 @@ def parser() -> argparse.ArgumentParser:
     generate.add_argument("--case-id", required=True)
     generate.add_argument("--run-id", required=True)
     generate.add_argument("--output")
+    generate.add_argument("--model")
+    generate.add_argument("--local-provider", choices=("ollama", "lmstudio"))
+    generate.add_argument(
+        "--reasoning-effort", choices=("low", "medium", "high", "xhigh"), default="high"
+    )
     generate.set_defaults(func=cmd_report)
     wireguard = commands.add_parser("wireguard")
     wg_actions = wireguard.add_subparsers(dest="wireguard_action", required=True)

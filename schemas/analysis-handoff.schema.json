@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tartarus.invalid/schemas/analysis-handoff.schema.json",
+  "title": "AnalysisHandoff",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "analysis_state",
+    "scope",
+    "executive_assessment",
+    "methodology",
+    "timeline",
+    "static_findings",
+    "function_analysis",
+    "dynamic_findings",
+    "network_behavior",
+    "security_behaviors",
+    "iocs",
+    "benign_observables",
+    "attack_mappings",
+    "detections",
+    "attribution",
+    "alternative_explanations",
+    "visibility_gaps",
+    "evidence_inventory",
+    "completion_gate"
+  ],
+  "$defs": {
+    "evidence_refs": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claim", "classification", "confidence", "evidence_refs"],
+      "properties": {
+        "claim": {"type": "string", "minLength": 1},
+        "classification": {"enum": ["observed", "inferred", "unresolved"]},
+        "confidence": {"enum": ["high", "medium", "low"]},
+        "evidence_refs": {"$ref": "#/$defs/evidence_refs"}
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "explanation", "evidence_refs"],
+      "properties": {
+        "passed": {"type": "boolean"},
+        "explanation": {"type": "string", "minLength": 1},
+        "evidence_refs": {"$ref": "#/$defs/evidence_refs"}
+      }
+    }
+  },
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "analysis_state": {"enum": ["analysis_complete", "analysis_incomplete"]},
+    "scope": {"$ref": "#/$defs/claim"},
+    "executive_assessment": {"$ref": "#/$defs/claim"},
+    "methodology": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["state", "summary", "evidence_refs"],
+        "properties": {
+          "state": {"enum": ["intake", "verified", "static_triage", "static_deep_dive", "dynamic_observation", "hypothesis_testing", "coverage_review", "analysis_complete", "analysis_incomplete"]},
+          "summary": {"type": "string", "minLength": 1},
+          "evidence_refs": {"$ref": "#/$defs/evidence_refs"}
+        }
+      }
+    },
+    "timeline": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["time", "activity", "classification", "evidence_refs"],
+        "properties": {
+          "time": {"type": "string", "minLength": 1},
+          "activity": {"type": "string", "minLength": 1},
+          "classification": {"enum": ["observed", "inferred", "unresolved"]},
+          "evidence_refs": {"$ref": "#/$defs/evidence_refs"}
+        }
+      }
+    },
+    "static_findings": {"type": "array", "items": {"$ref": "#/$defs/claim"}},
+    "function_analysis": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["address", "name", "analyst_name", "behavior", "confidence", "evidence_refs", "decompilation_artifact", "disassembly_artifact", "gap"],
+        "properties": {
+          "address": {"type": "string", "minLength": 1},
+          "name": {"type": "string", "minLength": 1},
+          "analyst_name": {"type": ["string", "null"]},
+          "behavior": {"type": "string", "minLength": 1},
+          "confidence": {"enum": ["high", "medium", "low"]},
+          "evidence_refs": {"$ref": "#/$defs/evidence_refs"},
+          "decompilation_artifact": {"type": ["string", "null"]},
+          "disassembly_artifact": {"type": ["string", "null"]},
+          "gap": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "dynamic_findings": {"type": "array", "items": {"$ref": "#/$defs/claim"}},
+    "network_behavior": {"type": "array", "items": {"$ref": "#/$defs/claim"}},
+    "security_behaviors": {"type": "array", "items": {"$ref": "#/$defs/claim"}},
+    "iocs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "value", "context", "confidence", "evidence_refs"],
+        "properties": {
+          "type": {"type": "string", "minLength": 1},
+          "value": {"type": "string", "minLength": 1},
+          "context": {"type": "string", "minLength": 1},
+          "confidence": {"enum": ["high", "medium", "low"]},
+          "evidence_refs": {"$ref": "#/$defs/evidence_refs"}
+        }
+      }
+    },
+    "benign_observables": {"type": "array", "items": {"$ref": "#/$defs/claim"}},
+    "attack_mappings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["technique_id", "technique_name", "basis", "confidence", "evidence_refs"],
+        "properties": {
+          "technique_id": {"type": "string", "pattern": "^T[0-9]{4}(\\.[0-9]{3})?$"},
+          "technique_name": {"type": "string", "minLength": 1},
+          "basis": {"type": "string", "minLength": 1},
+          "confidence": {"enum": ["high", "medium", "low"]},
+          "evidence_refs": {"$ref": "#/$defs/evidence_refs"}
+        }
+      }
+    },
+    "detections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title", "rationale", "log_sources", "false_positives", "rule_yaml", "evidence_refs"],
+        "properties": {
+          "title": {"type": "string", "minLength": 1},
+          "rationale": {"type": "string", "minLength": 1},
+          "log_sources": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "false_positives": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "rule_yaml": {"type": "string", "minLength": 1},
+          "evidence_refs": {"$ref": "#/$defs/evidence_refs"}
+        }
+      }
+    },
+    "attribution": {"$ref": "#/$defs/claim"},
+    "alternative_explanations": {"type": "array", "items": {"$ref": "#/$defs/claim"}},
+    "visibility_gaps": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "evidence_inventory": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "description"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "description": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "completion_gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sample_and_artifacts", "function_coverage", "function_details", "static_dynamic_correlation", "process_attribution", "intelligence_rules", "explicit_gaps", "sandbox_recovery"],
+      "properties": {
+        "sample_and_artifacts": {"$ref": "#/$defs/gate"},
+        "function_coverage": {"$ref": "#/$defs/gate"},
+        "function_details": {"$ref": "#/$defs/gate"},
+        "static_dynamic_correlation": {"$ref": "#/$defs/gate"},
+        "process_attribution": {"$ref": "#/$defs/gate"},
+        "intelligence_rules": {"$ref": "#/$defs/gate"},
+        "explicit_gaps": {"$ref": "#/$defs/gate"},
+        "sandbox_recovery": {"$ref": "#/$defs/gate"}
+      }
+    }
+  }
+}

@@ -57,3 +57,22 @@ The native test created 23 radare2 MCP ToolResult artifacts and one `analysis_ca
 The first teardown exposed a stale Tartarus role on the Ludus server. The stale role tried to install radare2 6.0.4 after the live upgrade to 6.1.8. Ludus rejected the downgrade, and Tartarus correctly recorded `collected_with_gaps` and `sandbox_rebuild_failed`. The controller then updated the registered Tartarus source and completed a forced deployment with the current role.
 
 The final run, `r2mcp-e2e-20261012c`, repeated native tool discovery and analysis after that deployment. It discovered all 42 tools across both MCP result pages. It retained eight native radare2 ToolResult artifacts and one capability artifact. All nine artifacts were present with the sizes recorded in the manifest. The final run has `status: collected`, `recovery_verified: true`, and no visibility gaps. Its rebuilt sandbox passed the complete range verifier.
+
+## AI reporting validation
+
+The `tartarus report generate` command was tested end to end against the completed
+`r2mcp-e2e-20261012c` benign run with the installed Codex CLI and its configured provider.
+Codex inspected the permitted retained evidence and returned the versioned `AnalysisHandoff`
+structure. Tartarus rejected the first handoff because one cited filename differed from the
+inventory by one character. The bounded repair loop returned the validation failure to Codex.
+The second handoff corrected the citation and passed schema, path, function-artifact, completion,
+and reporting-scope validation.
+
+The rendered report is 35,081 bytes and contains all 17 required report sections. It records five
+static findings, three function-analysis entries, five dynamic findings, three network findings,
+and nine explicit visibility gaps. It correctly reports no supported IOC, ATT&CK mapping,
+attribution, or Sigma rule for the benign fixture. The final state is `analysis_incomplete`
+because only `entry0` has complete retained decompilation and disassembly, the two retained
+function totals conflict, and alternate BusyBox applet paths were not exercised. The report links
+each material claim to an existing run-relative evidence file and records the passing and failing
+completion gates explicitly.

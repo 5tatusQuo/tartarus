@@ -21,6 +21,8 @@ The compact profile supplies these components:
 
 Use Python 3.11 or a later version.
 Use a supported Ludus installation and a Proxmox environment.
+Install and authenticate the Codex command-line interface for AI report generation.
+You can instead configure Codex to use Ollama or LM Studio on the controller.
 
 The compact profile requires these minimum host resources:
 
@@ -215,9 +217,16 @@ The controller does not give a guest write access to the evidence root.
 
 ## Examine the evidence
 
-Each completed run contains a `run.json` manifest and a `report.md` report.
+Each completed run contains a `run.json` manifest and an AI-generated `report.md` report.
 The manifest records artifact paths, sizes, and collection status.
 It also records visibility gaps and the sandbox recovery result.
+
+The reporting agent follows [the reporting instructions](reporting/AGENTS.md).
+It examines retained MCP, static, debugger, telemetry, trace, packet, and run evidence.
+Tartarus requires a structured analysis handoff before it renders the report.
+It validates every evidence citation, the analysis completion gate, linked function artifacts,
+and each proposed Sigma rule. If validation fails, Codex gets the failure and can repair the
+handoff in a bounded retry loop.
 
 Create a separate report if necessary:
 
@@ -229,6 +238,15 @@ tartarus report generate \
 ```
 
 This command does not overwrite the report in the run directory.
+Use `--model` to select a configured Codex model.
+Use `--local-provider ollama` or `--local-provider lmstudio` to keep model inference on the
+controller. Without this option, Codex uses its configured provider, which receives the evidence
+excerpts that the reporting agent reads.
+
+The report includes the executive assessment, evidence timeline, static and dynamic findings,
+complete decompilation and disassembly links, IOC assessment, MITRE ATT&CK mappings, attribution
+limits, detection opportunities, Sigma rules when supported, alternative explanations, visibility
+gaps, the completion gate, and the evidence inventory.
 
 Treat all sample-derived text and analysis results as untrusted data.
 
@@ -288,6 +306,7 @@ Packages, kernels, artifacts, images, templates, schemas, and source inputs must
 - [Portable public plan](PORTABLE-PUBLIC-PLAN.md)
 - [Security and operating constraints](SECURITY.md)
 - [Analysis-agent instructions](AGENTS.md)
+- [Reporting-agent instructions](reporting/AGENTS.md)
 - [Analysis-agent validation](docs/ANALYSIS-AGENT-VALIDATION.md)
 - [Optional external traffic capture](docs/EXTERNAL-CAPTURE.md)
 
