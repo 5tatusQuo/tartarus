@@ -1,0 +1,6 @@
+manifest_version: 1
+name: Tartarus
+description: Contained, portable Linux ELF malware-analysis ranges
+authors:
+  - Tartarus contributors
+# Deliberately unlicensed; see the repository documentation.

@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tartarus.invalid/schemas/deployment-manifest.schema.json",
+  "title": "DeploymentManifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "generated_at", "tartarus_release", "profile", "resolved_inputs"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "tartarus_release": {"type": "string", "minLength": 1},
+    "profile": {"enum": ["compact", "standard", "large"]},
+    "deployment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["range_id", "authenticated_user", "completed_at", "guests"],
+      "properties": {
+        "range_id": {"type": "string", "minLength": 1},
+        "authenticated_user": {"type": "string", "minLength": 1},
+        "completed_at": {"type": "string", "format": "date-time"},
+        "guests": {
+          "type": "object",
+          "required": ["elk", "remnux", "sandbox"],
+          "additionalProperties": false,
+          "properties": {
+            "elk": {"$ref": "#/$defs/guest"},
+            "remnux": {"$ref": "#/$defs/guest"},
+            "sandbox": {"$ref": "#/$defs/guest"}
+          }
+        }
+      }
+    },
+    "resolved_inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["architecture", "minimum_ludus_version", "build_tools", "images", "package_repositories", "components", "schemas", "policies", "controller_requirements_sha256", "artifacts", "source_tree_sha256", "source_files", "rendered_source_tree_sha256", "blueprint", "blueprint_sha256", "template_build_identifiers"],
+      "properties": {
+        "architecture": {"type": "string", "minLength": 1},
+        "minimum_ludus_version": {"type": "string", "minLength": 1},
+        "build_tools": {"type": "object", "minProperties": 1},
+        "images": {
+          "type": "object",
+          "minProperties": 2,
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["url", "algorithm", "digest"],
+            "properties": {
+              "url": {"type": "string", "pattern": "^https://"},
+              "algorithm": {"const": "sha256"},
+              "digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+            }
+          }
+        },
+        "package_repositories": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "string", "pattern": "^https?://"}},
+        "components": {"type": "object", "additionalProperties": {"type": ["string", "number"]}},
+        "schemas": {"type": "object", "minProperties": 8, "additionalProperties": {"type": "string", "pattern": "^[a-f0-9]{64}$"}},
+        "policies": {"type": "object", "minProperties": 2, "additionalProperties": {"type": "string", "pattern": "^[a-f0-9]{64}$"}},
+        "controller_requirements_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["filename", "url", "algorithm", "digest"],
+            "properties": {
+              "filename": {"type": "string", "minLength": 1},
+              "url": {"type": "string", "pattern": "^https://"},
+              "algorithm": {"enum": ["sha256", "sha512"]},
+              "digest": {"type": "string", "pattern": "^[a-f0-9]{64}([a-f0-9]{64})?$"}
+            }
+          }
+        },
+        "source_tree_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "rendered_source_tree_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "source_files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "sha256"],
+            "properties": {
+              "path": {"type": "string", "pattern": "^(?!/)(?!.*\\.\\./).+$"},
+              "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+            }
+          }
+        },
+        "blueprint": {"type": "string", "minLength": 1},
+        "blueprint_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "template_build_identifiers": {"type": "object", "minProperties": 2, "additionalProperties": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}}
+      }
+    }
+  },
+  "$defs": {
+    "guest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "address", "vmid", "kernel", "packages"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "address": {"type": "string", "minLength": 1},
+        "vmid": {"type": "integer", "minimum": 100},
+        "kernel": {"type": "string", "minLength": 1},
+        "packages": {"type": "array", "items": {"type": "string", "pattern": "^[^\\t]+\\t[^\\t]+$"}}
+      }
+    }
+  }
+}

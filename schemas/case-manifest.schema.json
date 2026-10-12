@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tartarus.invalid/schemas/case-manifest.schema.json",
+  "title": "CaseManifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "case_id", "created_at", "samples"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "case_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "created_at": {"type": "string", "format": "date-time"},
+    "samples": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sha256", "size", "staged_at", "media_type", "elf"],
+        "properties": {
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "size": {"type": "integer", "minimum": 0},
+          "staged_at": {"type": "string", "format": "date-time"},
+          "media_type": {"const": "application/x-elf"},
+          "elf": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["class", "endianness", "type", "machine"],
+            "properties": {
+              "class": {"enum": [32, 64]},
+              "endianness": {"enum": ["little", "big"]},
+              "type": {"type": "integer"},
+              "machine": {"type": "integer"}
+            }
+          }
+        }
+      }
+    }
+  }
+}

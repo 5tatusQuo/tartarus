@@ -1,0 +1,9 @@
+---
+- name: Restart journald
+  ansible.builtin.service: {name: systemd-journald, state: restarted}
+- name: Reload audit rules
+  ansible.builtin.command: augenrules --load
+  changed_when: true
+- name: Reload sysctl
+  ansible.builtin.command: sysctl --system
+  changed_when: true

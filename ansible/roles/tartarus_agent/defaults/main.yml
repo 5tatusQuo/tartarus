@@ -1,0 +1,2 @@
+tartarus_agent_elastic_host: "{{ hostvars[groups['tartarus_elk'][0]].ansible_host }}"
+tartarus_agent_metrics_period: 30s

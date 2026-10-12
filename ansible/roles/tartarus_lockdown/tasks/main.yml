@@ -1,0 +1,15 @@
+---
+- name: Permit noninteractive privilege escalation only for the controller account
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/tartarus-controller
+    owner: root
+    group: root
+    mode: "0440"
+    validate: /usr/sbin/visudo -cf %s
+    content: "{{ tartarus_lockdown_controller_user }} ALL=(root) NOPASSWD: ALL\n"
+
+- name: Lock the image bootstrap password after all provisioning roles
+  ansible.builtin.user:
+    name: "{{ tartarus_lockdown_controller_user }}"
+    password_lock: true
+  when: tartarus_lockdown_lock_bootstrap_password | bool

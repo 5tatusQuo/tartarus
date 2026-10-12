@@ -1,0 +1,7 @@
+tartarus_elk_elastic_version: 9.5.5
+tartarus_elk_elastic_heap: 2g
+tartarus_elk_elastic_deb: ""
+tartarus_elk_kibana_deb: ""
+tartarus_elk_tls_dir: /etc/elasticsearch/tartarus-tls
+tartarus_elk_telemetry_retention_days: 14
+tartarus_elk_manifest_retention_days: 30

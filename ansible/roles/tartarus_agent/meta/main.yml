@@ -1,0 +1,6 @@
+galaxy_info:
+  author: Tartarus contributors
+  description: Standalone bounded Elastic Agent for Tartarus Linux guests
+  license: unlicensed
+  min_ansible_version: "2.15"
+dependencies: []

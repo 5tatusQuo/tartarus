@@ -1,0 +1,6 @@
+galaxy_info:
+  author: Tartarus contributors
+  description: Secured single-node Elastic Stack for Tartarus
+  license: unlicensed
+  min_ansible_version: "2.15"
+dependencies: []

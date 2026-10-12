@@ -1,0 +1,332 @@
+---
+- name: Verify the supported analysis base
+  ansible.builtin.assert:
+    that:
+      - ansible_distribution == 'Debian'
+      - ansible_distribution_major_version == '12'
+    fail_msg: Tartarus analysis hosts require the owned Debian 12 template.
+
+- name: Remove the obsolete Debian backports source
+  ansible.builtin.apt_repository:
+    repo: deb http://deb.debian.org/debian bookworm-backports main
+    filename: tartarus-backports
+    state: absent
+    update_cache: false
+
+- name: Install analysis build and runtime prerequisites
+  ansible.builtin.apt:
+    name:
+      - build-essential
+      - bison
+      - cmake
+      - curl
+      - wireshark-common
+      - flex
+      - inetsim
+      - libgmp-dev
+      - libfl-dev
+      - libmaxminddb-dev
+      - libmpfr-dev
+      - libpcap-dev
+      - libssl-dev
+      - lsof
+      - python3-dev
+      - swig
+      - texinfo
+      - unzip
+      - zlib1g-dev
+    state: present
+    update_cache: true
+
+- name: Create Tartarus analysis root and verified artifact cache
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /opt/tartarus
+    - /var/cache/tartarus
+
+- name: Download checksum-locked analysis artifacts
+  ansible.builtin.get_url:
+    url: "{{ item.url }}"
+    dest: "/var/cache/tartarus/{{ item.name }}"
+    checksum: "sha256:{{ item.digest }}"
+    owner: root
+    group: root
+    mode: "0644"
+    timeout: 120
+  loop: "{{ tartarus_remnux_version_commands.results }}"
+  register: tartarus_remnux_artifact_downloads
+  until: tartarus_remnux_artifact_downloads is succeeded
+  retries: 5
+  delay: 10
+  vars:
+    tartarus_remnux_version_commands:
+      results:
+        - {name: zeek-7.2.2.tar.gz, url: https://github.com/zeek/zeek/releases/download/v7.2.2/zeek-7.2.2.tar.gz, digest: 2b1df248f94199a1684e1c460d64cf1c5e49d7471c2b562f942ac5fbe9805893}
+        - {name: r2mcp_1.8.8_amd64.deb, url: https://github.com/radareorg/radare2-mcp/releases/download/1.8.8/r2mcp_1.8.8_amd64.deb, digest: 1de404fd88881fd2a543c6c4e552a688f2120966c809da4bbfec9594ec669000}
+        - {name: radare2_6.0.4_amd64.deb, url: https://github.com/radareorg/radare2/releases/download/6.0.4/radare2_6.0.4_amd64.deb, digest: 5bed66a800933455569a03e607727c2121a4c632a74fe280c0b8c71bd2010b7b}
+        - {name: ghidra_11.4.2_PUBLIC_20250826.zip, url: https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_11.4.2_build/ghidra_11.4.2_PUBLIC_20250826.zip, digest: 795a02076af16257bd6f3f4736c4fc152ce9ff1f95df35cd47e2adc086e037a6}
+        - {name: OpenJDK21U-jdk_x64_linux_hotspot_21.0.12.1_1.tar.gz, url: https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jdk_x64_linux_hotspot_21.0.12.1_1.tar.gz, digest: ce79869e1307ed8ee1e2baa86a412b1eb5b75d10a01006d788a6f968bcfaee94}
+        - {name: gdb-mcp-v0.4.0.tar.gz, url: https://codeload.github.com/BeaCox/gdb-mcp/tar.gz/250f670aee9bc32a95522e28b8c499d2e7b9d107, digest: ed7738eaf0607576148cd83c525fefcbec173b21174c570e1b9f40c778aa658e}
+        - {name: gdb-15.2.tar.xz, url: https://ftp.gnu.org/gnu/gdb/gdb-15.2.tar.xz, digest: 83350ccd35b5b5a0cba6b334c41294ea968158c573940904f00b92f76345314d}
+
+- name: Verify cached analysis artifacts
+  ansible.builtin.stat:
+    path: "/var/cache/tartarus/{{ item.name }}"
+    checksum_algorithm: sha256
+  loop:
+    - {name: zeek-7.2.2.tar.gz, digest: 2b1df248f94199a1684e1c460d64cf1c5e49d7471c2b562f942ac5fbe9805893}
+    - {name: r2mcp_1.8.8_amd64.deb, digest: 1de404fd88881fd2a543c6c4e552a688f2120966c809da4bbfec9594ec669000}
+    - {name: radare2_6.0.4_amd64.deb, digest: 5bed66a800933455569a03e607727c2121a4c632a74fe280c0b8c71bd2010b7b}
+    - {name: ghidra_11.4.2_PUBLIC_20250826.zip, digest: 795a02076af16257bd6f3f4736c4fc152ce9ff1f95df35cd47e2adc086e037a6}
+    - {name: OpenJDK21U-jdk_x64_linux_hotspot_21.0.12.1_1.tar.gz, digest: ce79869e1307ed8ee1e2baa86a412b1eb5b75d10a01006d788a6f968bcfaee94}
+    - {name: gdb-mcp-v0.4.0.tar.gz, digest: ed7738eaf0607576148cd83c525fefcbec173b21174c570e1b9f40c778aa658e}
+    - {name: gdb-15.2.tar.xz, digest: 83350ccd35b5b5a0cba6b334c41294ea968158c573940904f00b92f76345314d}
+  register: tartarus_remnux_cached_artifacts
+
+- name: Enforce baked analysis artifact digests
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.checksum == item.item.digest
+  loop: "{{ tartarus_remnux_cached_artifacts.results }}"
+
+- name: Unpack the pinned Zeek source release
+  ansible.builtin.unarchive:
+    src: /var/cache/tartarus/zeek-7.2.2.tar.gz
+    dest: /opt/tartarus
+    remote_src: true
+    creates: /opt/tartarus/zeek-7.2.2/configure
+
+- name: Check whether the pinned Zeek source configured successfully
+  ansible.builtin.stat:
+    path: /opt/tartarus/zeek-7.2.2/.tartarus-configured
+  register: tartarus_remnux_zeek_configured
+
+- name: Remove an incomplete Zeek build tree before configuring
+  ansible.builtin.file:
+    path: /opt/tartarus/zeek-7.2.2/build
+    state: absent
+  when: not tartarus_remnux_zeek_configured.stat.exists
+
+- name: Configure the pinned Zeek build
+  ansible.builtin.command:
+    argv: [./configure, --prefix=/opt/zeek-7.2.2]
+    chdir: /opt/tartarus/zeek-7.2.2
+  changed_when: true
+  when: not tartarus_remnux_zeek_configured.stat.exists
+
+- name: Mark the pinned Zeek source as configured
+  ansible.builtin.file:
+    path: /opt/tartarus/zeek-7.2.2/.tartarus-configured
+    state: touch
+    owner: root
+    group: root
+    mode: "0644"
+  when: not tartarus_remnux_zeek_configured.stat.exists
+
+- name: Build the pinned Zeek release
+  ansible.builtin.command:
+    argv: [make, -j2]
+    chdir: /opt/tartarus/zeek-7.2.2/build
+    creates: /opt/tartarus/zeek-7.2.2/build/src/zeek
+
+- name: Install the pinned Zeek release
+  ansible.builtin.command:
+    argv: [make, install]
+    chdir: /opt/tartarus/zeek-7.2.2/build
+    creates: /opt/zeek-7.2.2/bin/zeek
+
+- name: Publish pinned Zeek command
+  ansible.builtin.file:
+    src: /opt/zeek-7.2.2/bin/zeek
+    dest: /usr/local/bin/zeek
+    state: link
+
+- name: Install pinned radare2
+  ansible.builtin.apt:
+    deb: /var/cache/tartarus/radare2_6.0.4_amd64.deb
+    state: present
+
+- name: Install pinned radare2 MCP package
+  ansible.builtin.apt:
+    deb: /var/cache/tartarus/r2mcp_1.8.8_amd64.deb
+    state: present
+
+- name: Install pinned Ghidra distribution
+  ansible.builtin.unarchive:
+    src: /var/cache/tartarus/ghidra_11.4.2_PUBLIC_20250826.zip
+    dest: /opt
+    remote_src: true
+    creates: /opt/ghidra_11.4.2_PUBLIC/support/analyzeHeadless
+
+- name: Install the pinned Temurin Java 21 development kit required by Ghidra
+  ansible.builtin.unarchive:
+    src: /var/cache/tartarus/OpenJDK21U-jdk_x64_linux_hotspot_21.0.12.1_1.tar.gz
+    dest: /opt/tartarus
+    remote_src: true
+    creates: /opt/tartarus/jdk-21.0.12.1+1/bin/javac
+
+- name: Publish pinned Java development kit commands
+  ansible.builtin.file:
+    src: "/opt/tartarus/jdk-21.0.12.1+1/bin/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    state: link
+  loop:
+    - java
+    - javac
+
+- name: Read pinned Java runtime version
+  ansible.builtin.command:
+    argv: [/usr/local/bin/java, -version]
+  register: tartarus_remnux_java_version
+  changed_when: false
+
+- name: Enforce pinned Java runtime version
+  ansible.builtin.assert:
+    that: "'21.0.12' in (tartarus_remnux_java_version.stdout ~ tartarus_remnux_java_version.stderr)"
+    fail_msg: The installed Java runtime does not match pinned Temurin 21.0.12.
+
+- name: Publish pinned headless Ghidra command
+  ansible.builtin.file:
+    src: /opt/ghidra_11.4.2_PUBLIC/support/analyzeHeadless
+    dest: /usr/local/bin/analyzeHeadless
+    state: link
+
+- name: Install pinned GDB MCP source for the constrained gateway
+  ansible.builtin.unarchive:
+    src: /var/cache/tartarus/gdb-mcp-v0.4.0.tar.gz
+    dest: /opt/tartarus
+    remote_src: true
+    creates: /opt/tartarus/gdb-mcp-250f670aee9bc32a95522e28b8c499d2e7b9d107
+
+- name: Unpack pinned GDB source
+  ansible.builtin.unarchive:
+    src: /var/cache/tartarus/gdb-15.2.tar.xz
+    dest: /opt/tartarus
+    remote_src: true
+    creates: /opt/tartarus/gdb-15.2/configure
+
+- name: Configure pinned GDB build
+  ansible.builtin.command:
+    argv: [./configure, --prefix=/opt/gdb-15.2, --with-python=/usr/bin/python3]
+    chdir: /opt/tartarus/gdb-15.2
+    creates: /opt/tartarus/gdb-15.2/Makefile
+
+- name: Build pinned GDB
+  ansible.builtin.command:
+    argv: [make, -j2]
+    chdir: /opt/tartarus/gdb-15.2
+    creates: /opt/tartarus/gdb-15.2/gdb/gdb
+
+- name: Install pinned GDB
+  ansible.builtin.command:
+    argv: [make, install]
+    chdir: /opt/tartarus/gdb-15.2
+    creates: /opt/gdb-15.2/bin/gdb
+
+- name: Publish pinned GDB command
+  ansible.builtin.file:
+    src: /opt/gdb-15.2/bin/gdb
+    dest: /usr/local/bin/gdb
+    state: link
+
+- name: Read pinned analysis tool versions
+  ansible.builtin.command:
+    argv: ["{{ item.command }}", "{{ item.argument }}"]
+  loop:
+    - {command: inetsim, argument: --version, expected: "1.3.2"}
+    - {command: zeek, argument: --version, expected: "7.2.2"}
+  register: tartarus_remnux_version_commands
+  changed_when: false
+
+- name: Enforce pinned analysis tool versions
+  ansible.builtin.assert:
+    that: item.item.expected in (item.stdout ~ item.stderr)
+    fail_msg: "{{ item.item.command }} does not match the pinned Tartarus version"
+  loop: "{{ tartarus_remnux_version_commands.results }}"
+
+- name: Bind INetSim services to the analysis interface
+  ansible.builtin.lineinfile:
+    path: /etc/inetsim/inetsim.conf
+    regexp: '^#?service_bind_address'
+    line: service_bind_address 0.0.0.0
+  notify: Restart inetsim
+
+- name: Enable INetSim
+  ansible.builtin.service:
+    name: inetsim
+    enabled: true
+    state: started
+
+- name: Create controller-pull capture spool
+  ansible.builtin.file:
+    path: "{{ tartarus_remnux_capture_dir }}"
+    state: directory
+    owner: root
+    group: adm
+    mode: "0750"
+
+- name: Create inert static-analysis and Ghidra directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ tartarus_remnux_analysis_user }}"
+    group: "{{ tartarus_remnux_analysis_user }}"
+    mode: "0750"
+  loop:
+    - /var/spool/tartarus/static
+    - /var/spool/tartarus/ghidra
+
+- name: Create root-owned Ghidra script directory
+  ansible.builtin.file:
+    path: /opt/tartarus/ghidra-scripts
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install constrained headless Ghidra scripts
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/opt/tartarus/ghidra-scripts/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - TartarusFunctions.java
+    - TartarusDecompile.java
+    - TartarusDisassembly.java
+    - TartarusStrings.java
+    - TartarusXrefs.java
+
+- name: Install bounded capture helper
+  ansible.builtin.copy:
+    dest: /usr/local/sbin/tartarus-capture
+    owner: root
+    group: root
+    mode: "0750"
+    content: |
+      #!/bin/sh
+      set -eu
+      test "$#" -ge 2
+      action="$1"; run_id="$2"; iface="${3:-}"
+      case "$run_id" in (*[!A-Za-z0-9._-]*|'') exit 64;; esac
+      unit="tartarus-capture-$run_id.service"
+      case "$action" in
+        start)
+          case "$iface" in (*[!A-Za-z0-9._:-]*|'') exit 64;; esac
+          systemd-run --unit "$unit" --collect --property=KillMode=control-group \
+            dumpcap -i "$iface" -a filesize:{{ tartarus_remnux_capture_max_mib * 1024 }} \
+            -w "{{ tartarus_remnux_capture_dir }}/${run_id}.pcapng"
+          ;;
+        stop)
+          systemctl stop "$unit" 2>/dev/null || true
+          journalctl -u "$unit" --no-pager > "{{ tartarus_remnux_capture_dir }}/${run_id}-capture.log" 2>&1 || true
+          ;;
+        *) exit 64;;
+      esac

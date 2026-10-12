@@ -1,0 +1,11 @@
+---
+- name: Validate Tartarus role syntax
+  hosts: all
+  gather_facts: false
+  roles:
+    - tartarus_common
+    - tartarus_elk
+    - tartarus_remnux
+    - tartarus_sandbox
+    - tartarus_agent
+    - tartarus_lockdown

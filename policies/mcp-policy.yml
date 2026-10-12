@@ -1,0 +1,16 @@
+version: 1
+transport: stdio
+sample_content_is_untrusted: true
+ghidra:
+  allowed_operations: [import, functions, disassembly, decompile, strings, xrefs]
+  path_scope: current_project
+radare2:
+  read_only: true
+  sandbox: true
+  raw_commands: false
+gdb:
+  allowed_operations: [session_create, breakpoint, step, continue, registers, stack, memory_read]
+  shell_escape: false
+  arbitrary_write: false
+  unrelated_attach: false
+  max_memory_read_bytes: 256

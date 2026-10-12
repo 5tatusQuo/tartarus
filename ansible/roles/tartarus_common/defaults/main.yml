@@ -1,0 +1,9 @@
+tartarus_common_disable_ipv6: true
+tartarus_common_journal_max_use: 512M
+tartarus_common_controller_ssh_public_key: ""
+tartarus_common_controller_user: debian
+tartarus_common_audit_rules:
+  - "-a always,exit -F arch=b64 -S execve,execveat -k tartarus-exec"
+  - "-w /etc/ -p wa -k tartarus-etc"
+  - "-w /usr/local/bin/ -p wa -k tartarus-persistence"
+  - "-w /etc/systemd/system/ -p wa -k tartarus-persistence"

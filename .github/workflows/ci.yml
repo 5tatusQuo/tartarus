@@ -1,0 +1,47 @@
+name: CI
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    strategy:
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "${{ matrix.python }}"}
+      - run: pip install --require-hashes -r requirements.lock
+      - run: pip install --no-deps -e .
+      - run: pip install pytest==8.4.2 ruff==0.17.0 ansible-lint==26.9.0 yamllint==1.38.0
+      - run: ruff check controller tests scripts
+      - run: ruff format --check controller tests scripts
+      - run: pytest -q
+      - run: ansible-lint ansible/roles templates/tartarus-remnux-ubuntu-20.04/ansible
+      - run: ANSIBLE_ROLES_PATH=ansible/roles ansible-playbook --syntax-check -i localhost, tests/ansible/syntax.yml
+      - run: ansible-playbook --syntax-check -i localhost, templates/tartarus-remnux-ubuntu-20.04/ansible/remnux.yml
+      - run: yamllint ansible blueprints versions.lock.yml source.yml
+      - run: python scripts/validate_repository.py
+
+  packer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-packer@main
+        with: {version: "1.11.2"}
+      - run: packer fmt -check -recursive templates
+      - run: |
+          packer validate -syntax-only templates/tartarus-debian-12/tartarus-debian-12.pkr.hcl
+          packer validate -syntax-only templates/tartarus-remnux-ubuntu-20.04/tartarus-remnux-ubuntu-20.04.pkr.hcl
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: gitleaks/gitleaks-action@v2

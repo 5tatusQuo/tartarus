@@ -1,0 +1,6 @@
+roles:
+  - name: badsectorlabs.ludus_remnux
+    version: 1.0.1
+collections:
+  - name: ansible.posix
+    version: 2.1.0

@@ -1,0 +1,23 @@
+---
+- name: Verify Elastic Agent package baked into the owned template
+  ansible.builtin.stat:
+    path: /var/cache/tartarus/elastic-agent-9.5.5-amd64.deb
+    checksum_algorithm: sha512
+  register: tartarus_agent_cached_package
+
+- name: Enforce baked Elastic Agent package digest
+  ansible.builtin.assert:
+    that:
+      - tartarus_agent_cached_package.stat.exists
+      - tartarus_agent_cached_package.stat.checksum == '381d11606b0534f0eed1df44717b0ab26f91b4009d2e63287eedd6ded127c4739273e920795ae3f5f55dcd795bf0cfbb74f37ce855592cbaec1cb679dad1a5ff'
+
+- name: Install pinned standalone Elastic Agent
+  ansible.builtin.apt:
+    deb: /var/cache/tartarus/elastic-agent-9.5.5-amd64.deb
+    state: present
+
+- name: Keep Elastic Agent stopped until controller credential delivery
+  ansible.builtin.service:
+    name: elastic-agent
+    enabled: false
+    state: stopped

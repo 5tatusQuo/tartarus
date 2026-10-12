@@ -1,0 +1,3 @@
+---
+tartarus_lockdown_controller_user: debian
+tartarus_lockdown_lock_bootstrap_password: false

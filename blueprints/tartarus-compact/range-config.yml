@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=https://docs.ludus.cloud/schemas/range-config.json
+ludus:
+  - vm_name: "{{ range_id }}-elk-01"
+    hostname: elk-01
+    template: tartarus-debian-12-template
+    vlan: 10
+    ip_last_octet: 10
+    ram_gb: 4
+    cpus: 4
+    linux: true
+    ansible_groups: [tartarus_elk]
+    testing: {snapshot: false, block_internet: true}
+    roles: [tartarus_common, tartarus_elk, tartarus_lockdown]
+  - vm_name: "{{ range_id }}-remnux-01"
+    hostname: remnux-01
+    template: tartarus-debian-12-template
+    vlan: 20
+    ip_last_octet: 20
+    ram_gb: 4
+    cpus: 2
+    linux: true
+    testing: {snapshot: false, block_internet: true}
+    roles:
+      - tartarus_common
+      - tartarus_remnux
+      - tartarus_agent
+      - tartarus_lockdown
+    ansible_groups: [tartarus_remnux]
+  - vm_name: "{{ range_id }}-linux-sbx-01"
+    hostname: linux-sbx-01
+    template: tartarus-debian-12-template
+    vlan: 30
+    ip_last_octet: 30
+    ram_gb: 2
+    cpus: 2
+    linux: true
+    testing: {snapshot: true, block_internet: true}
+    roles:
+      - tartarus_common
+      - tartarus_sandbox
+      - tartarus_agent
+      - tartarus_lockdown
+    ansible_groups: [tartarus_sandbox]
+router:
+  template: debian-12-x64-server-template
+  ram_gb: 2
+  ram_min_gb: 1
+  cpus: 2
+network:
+  external_default: ACCEPT
+  inter_vlan_default: REJECT
+  wireguard_vlan_default: REJECT
+  always_blocked_networks: []
+  rules:
+    - {name: sandbox experiment traffic, vlan_src: 30, vlan_dst: 20, protocol: all, ports: all, action: ACCEPT}
+    - {name: temporary remnux gdbserver, vlan_src: 20, vlan_dst: 30, protocol: tcp, ports: 2345, action: ACCEPT}
+    - {name: remnux elastic ingest, vlan_src: 20, vlan_dst: 10, protocol: tcp, ports: 9200, action: ACCEPT}
+    - {name: sandbox elastic ingest, vlan_src: 30, vlan_dst: 10, protocol: tcp, ports: 9200, action: ACCEPT}
+ludus_extensions:
+  tartarus: {profile: compact, schema_version: 1}
+defaults:
+  use_cert_auth: false

@@ -1,0 +1,114 @@
+---
+- name: Install on-demand observation tools
+  ansible.builtin.apt:
+    name: [strace, gdbserver, bpftrace, lsof]
+    state: present
+    update_cache: false
+
+- name: Create non-privileged sample runner
+  ansible.builtin.user:
+    name: tartarus-runner
+    create_home: false
+    home: /nonexistent
+    shell: /usr/sbin/nologin
+    system: true
+
+- name: Create sandbox spool
+  ansible.builtin.file:
+    path: /var/spool/tartarus/runs
+    state: directory
+    owner: root
+    group: tartarus-runner
+    mode: "0730"
+
+- name: Define resource limits for sample units
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/tartarus-runner.slice
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Tartarus bounded sample execution
+      [Slice]
+      CPUQuota={{ tartarus_sandbox_runner_cpu_quota }}
+      MemoryMax={{ tartarus_sandbox_runner_memory_max }}
+      TasksMax={{ tartarus_sandbox_runner_tasks_max }}
+  notify: Reload systemd
+
+- name: Install bounded sample lifecycle helper
+  ansible.builtin.copy:
+    dest: /usr/local/sbin/tartarus-run
+    owner: root
+    group: root
+    mode: "0750"
+    content: |
+      #!/bin/sh
+      set -eu
+      action="${1:-}"; run_id="${2:-}"
+      case "$run_id" in (*[!A-Za-z0-9._-]*|'') exit 64;; esac
+      run_dir="/var/spool/tartarus/runs/$run_id"
+      unit="tartarus-run-$run_id.service"
+      snapshot() {
+        label="$1"
+        find /etc /usr/local/bin /tmp /var/tmp -xdev -type f -size -64M -print0 2>/dev/null |
+          sort -z | xargs -0r sha256sum > "$run_dir/files-$label.sha256"
+        ps -e -o pid,ppid,uid,gid,lstart,args > "$run_dir/processes-$label.txt"
+        ss -H -lntup > "$run_dir/sockets-$label.txt" 2>&1 || true
+      }
+      case "$action" in
+        start)
+          expected="${3:-}"; profile="${4:-}"; duration="${5:-}"; debug="${6:-false}"
+          case "$expected" in (*[!a-f0-9]*|'') exit 64;; esac
+          case "$profile" in (lightweight|standard|deep) :;; (*) exit 64;; esac
+          case "$duration" in (*[!0-9]*|'') exit 64;; esac
+          case "$debug" in (true|false) :;; (*) exit 64;; esac
+          test "$duration" -ge 1 && test "$duration" -le 3600
+          test "$(sha256sum "$run_dir/sample" | cut -d' ' -f1)" = "$expected"
+          snapshot before
+          chown -R tartarus-runner:tartarus-runner "$run_dir"
+          if test "$profile" = deep; then
+            systemd-run --unit "tartarus-bpf-$run_id.service" --collect \
+              --property=LimitFSIZE=1073741824 \
+              bpftrace -o "$run_dir/bpftrace.log" -e \
+              'tracepoint:syscalls:sys_enter_execve /uid == 0 || uid >= 1000/ { printf("%d %d %s\n", pid, uid, comm); }'
+            sleep 1
+          fi
+          if test "$debug" = true; then
+            command="gdbserver :2345 ./sample"
+          elif test "$profile" = lightweight; then
+            command="./sample"
+          else
+            command="strace -ff -tt -s 256 -o strace ./sample"
+          fi
+          systemd-run --unit "$unit" --slice tartarus-runner.slice --collect \
+            --property="RuntimeMaxSec=${duration}s" --property=KillMode=control-group \
+            --property=NoNewPrivileges=yes --property=LimitFSIZE=1073741824 \
+            --property=StandardOutput=append:"$run_dir/stdout.log" \
+            --property=StandardError=append:"$run_dir/stderr.log" \
+            --uid=tartarus-runner --gid=tartarus-runner \
+            --working-directory="$run_dir" /bin/sh -c "$command"
+          ;;
+        stop)
+          ps -u tartarus-runner -o pid= | while read -r pid; do
+            test -r "/proc/$pid/maps" && cp "/proc/$pid/maps" "$run_dir/proc-$pid-maps.txt" || true
+            test -r "/proc/$pid/status" && cp "/proc/$pid/status" "$run_dir/proc-$pid-status.txt" || true
+          done
+          lsof -nP -u tartarus-runner > "$run_dir/lsof.txt" 2>&1 || true
+          systemctl stop "$unit" 2>/dev/null || true
+          systemctl stop "tartarus-bpf-$run_id.service" 2>/dev/null || true
+          journalctl -u "$unit" --no-pager > "$run_dir/unit-journal.log" 2>&1 || true
+          snapshot after
+          diff -u "$run_dir/files-before.sha256" "$run_dir/files-after.sha256" \
+            > "$run_dir/filesystem-diff.txt" || test "$?" -eq 1
+          journalctl -u elastic-agent --since '-1 hour' -n 10000 --no-pager \
+            > "$run_dir/elastic-agent.log" 2>&1 || true
+          auditctl -s > "$run_dir/audit-status.txt" 2>&1 || true
+          chown -R root:root "$run_dir"
+          chmod -R go-rwx "$run_dir"
+          ;;
+        status)
+          systemctl show "$unit" --property=ActiveState,SubState,Result,ExecMainStatus
+          ;;
+        *) exit 64;;
+      esac

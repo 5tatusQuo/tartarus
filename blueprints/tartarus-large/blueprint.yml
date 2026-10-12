@@ -1,0 +1,8 @@
+manifest_version: 1
+id: tartarus-large
+name: Tartarus Large
+description: High-volume contained Linux ELF analysis range for 64 GiB hosts
+version: 0.1.0
+tags: [malware-analysis, linux, contained]
+min_ludus_version: 2.3.7
+config: range-config.yml

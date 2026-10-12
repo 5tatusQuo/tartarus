@@ -1,0 +1,3 @@
+tartarus_remnux_capture_dir: /var/spool/tartarus/capture
+tartarus_remnux_capture_max_mib: 4096
+tartarus_remnux_analysis_user: debian

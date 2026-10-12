@@ -1,0 +1,3 @@
+tartarus_sandbox_runner_memory_max: 1G
+tartarus_sandbox_runner_tasks_max: 256
+tartarus_sandbox_runner_cpu_quota: 100%

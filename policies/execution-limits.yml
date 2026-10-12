@@ -1,0 +1,11 @@
+version: 1
+runner_user: tartarus-runner
+root_execution: approval_required
+defaults:
+  duration_seconds: 300
+  cpu_quota_percent: 100
+  memory_mib: 1024
+  tasks_max: 256
+  file_size_mib: 1024
+  trace_size_mib: 2048
+  artifact_quota_gib: 20

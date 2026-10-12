@@ -1,0 +1,389 @@
+---
+- name: Verify Elastic packages baked into the owned template
+  ansible.builtin.stat:
+    path: "/var/cache/tartarus/{{ item.name }}"
+    checksum_algorithm: sha512
+  loop:
+    - name: elasticsearch-9.5.5-amd64.deb
+      digest: e7b843933fbd6e08e0ac7d6a0c5bf90a27cdbc754187852315a062c6c1a7bf60166786e01c3e74b8f55cdc0170e20f4765448861668da24982aef64ee261a6df
+    - name: kibana-9.5.5-amd64.deb
+      digest: c1ddacf6dead0e062b5e1bb58e707f18558cdd163684b827bc4b81212750a051cf3f29fc4fd5480c682dc99852fcd5bcfd89a7197412b010435382e9bc4af0ab
+  register: tartarus_elk_cached_packages
+
+- name: Enforce baked Elastic package digests
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.checksum == item.item.digest
+  loop: "{{ tartarus_elk_cached_packages.results }}"
+
+- name: Install pinned Elastic packages
+  ansible.builtin.apt:
+    deb: "/var/cache/tartarus/{{ item }}"
+    state: present
+  loop: [elasticsearch-9.5.5-amd64.deb, kibana-9.5.5-amd64.deb]
+
+- name: Install certificate utilities
+  ansible.builtin.apt:
+    name: [openssl, unzip]
+    state: present
+
+- name: Create protected Elastic certificate directory
+  ansible.builtin.file:
+    path: "{{ tartarus_elk_tls_dir }}"
+    state: directory
+    owner: root
+    group: elasticsearch
+    mode: "0750"
+
+- name: Permit Kibana to traverse the Elastic certificate directory
+  ansible.builtin.user:
+    name: kibana
+    groups: elasticsearch
+    append: true
+
+- name: Generate installation-specific Elastic CA
+  ansible.builtin.command:
+    argv: [/usr/share/elasticsearch/bin/elasticsearch-certutil, ca, --silent, --out, "{{ tartarus_elk_tls_dir }}/ca.p12", --pass, ""]
+    creates: "{{ tartarus_elk_tls_dir }}/ca.p12"
+  no_log: true
+
+- name: Generate Elasticsearch node certificate
+  ansible.builtin.command:
+    argv:
+      - /usr/share/elasticsearch/bin/elasticsearch-certutil
+      - cert
+      - --silent
+      - --ca
+      - "{{ tartarus_elk_tls_dir }}/ca.p12"
+      - --ca-pass
+      - ""
+      - --out
+      - "{{ tartarus_elk_tls_dir }}/elastic-stack.p12"
+      - --pass
+      - ""
+      - --dns
+      - elk-01,localhost
+      - --ip
+      - "{{ ansible_host }},127.0.0.1"
+    creates: "{{ tartarus_elk_tls_dir }}/elastic-stack.p12"
+  no_log: true
+
+- name: Inspect the raw public CA export
+  ansible.builtin.stat:
+    path: "{{ tartarus_elk_tls_dir }}/ca-export.pem"
+  register: tartarus_elk_raw_ca
+
+- name: Remove a legacy unnormalized public CA export
+  ansible.builtin.file:
+    path: "{{ tartarus_elk_tls_dir }}/ca.crt"
+    state: absent
+  when: not tartarus_elk_raw_ca.stat.exists
+
+- name: Export the public CA certificate and PKCS12 attributes
+  ansible.builtin.command:
+    argv: [openssl, pkcs12, -in, "{{ tartarus_elk_tls_dir }}/ca.p12", -nokeys, -passin, "pass:", -out, "{{ tartarus_elk_tls_dir }}/ca-export.pem"]
+    creates: "{{ tartarus_elk_tls_dir }}/ca-export.pem"
+
+- name: Normalize the public CA certificate as PEM
+  ansible.builtin.command:
+    argv: [openssl, x509, -in, "{{ tartarus_elk_tls_dir }}/ca-export.pem", -out, "{{ tartarus_elk_tls_dir }}/ca.crt"]
+    creates: "{{ tartarus_elk_tls_dir }}/ca.crt"
+
+- name: Generate Kibana TLS PEM archive
+  ansible.builtin.command:
+    argv:
+      - /usr/share/elasticsearch/bin/elasticsearch-certutil
+      - cert
+      - --silent
+      - --pem
+      - --ca
+      - "{{ tartarus_elk_tls_dir }}/ca.p12"
+      - --ca-pass
+      - ""
+      - --out
+      - "{{ tartarus_elk_tls_dir }}/kibana.zip"
+      - --name
+      - kibana
+      - --dns
+      - elk-01,localhost
+      - --ip
+      - "{{ ansible_host }},127.0.0.1"
+    creates: "{{ tartarus_elk_tls_dir }}/kibana.zip"
+  no_log: true
+
+- name: Extract Kibana TLS certificate
+  ansible.builtin.unarchive:
+    src: "{{ tartarus_elk_tls_dir }}/kibana.zip"
+    dest: "{{ tartarus_elk_tls_dir }}"
+    remote_src: true
+    creates: "{{ tartarus_elk_tls_dir }}/kibana/kibana.crt"
+
+- name: Protect Elastic TLS material
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: root
+    group: elasticsearch
+    mode: "0640"
+  loop:
+    - "{{ tartarus_elk_tls_dir }}/ca.p12"
+    - "{{ tartarus_elk_tls_dir }}/elastic-stack.p12"
+
+- name: Make public CA readable
+  ansible.builtin.file:
+    path: "{{ tartarus_elk_tls_dir }}/ca.crt"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Protect Kibana private key
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: root
+    group: kibana
+    mode: "0640"
+  loop:
+    - "{{ tartarus_elk_tls_dir }}/kibana/kibana.crt"
+    - "{{ tartarus_elk_tls_dir }}/kibana/kibana.key"
+
+- name: Configure secured single-node Elasticsearch
+  ansible.builtin.copy:
+    dest: /etc/elasticsearch/elasticsearch.yml
+    owner: root
+    group: elasticsearch
+    mode: "0640"
+    content: |
+      cluster.name: tartarus
+      node.name: elk-01
+      discovery.type: single-node
+      network.host: 0.0.0.0
+      path.data: /var/lib/elasticsearch
+      path.logs: /var/log/elasticsearch
+      xpack.security.enabled: true
+      xpack.security.http.ssl.enabled: true
+      xpack.security.http.ssl.keystore.path: {{ tartarus_elk_tls_dir }}/elastic-stack.p12
+      xpack.security.transport.ssl.enabled: true
+      xpack.security.transport.ssl.verification_mode: certificate
+      xpack.security.transport.ssl.keystore.path: {{ tartarus_elk_tls_dir }}/elastic-stack.p12
+      xpack.security.transport.ssl.truststore.path: {{ tartarus_elk_tls_dir }}/elastic-stack.p12
+  notify: Restart elasticsearch
+
+- name: Configure bounded Elasticsearch heap
+  ansible.builtin.copy:
+    dest: /etc/elasticsearch/jvm.options.d/tartarus.options
+    owner: root
+    group: elasticsearch
+    mode: "0640"
+    content: "-Xms{{ tartarus_elk_elastic_heap }}\n-Xmx{{ tartarus_elk_elastic_heap }}\n"
+  notify: Restart elasticsearch
+
+- name: List package-generated Elasticsearch secure settings
+  ansible.builtin.command:
+    argv: [/usr/share/elasticsearch/bin/elasticsearch-keystore, list]
+  register: tartarus_elk_secure_settings
+  changed_when: false
+
+- name: Remove stale package-generated TLS passwords
+  ansible.builtin.command:
+    argv: [/usr/share/elasticsearch/bin/elasticsearch-keystore, remove, "{{ item }}"]
+  loop:
+    - xpack.security.http.ssl.keystore.secure_password
+    - xpack.security.transport.ssl.keystore.secure_password
+    - xpack.security.transport.ssl.truststore.secure_password
+  when: item in tartarus_elk_secure_settings.stdout_lines
+  changed_when: true
+  no_log: true
+
+- name: Enable Elasticsearch
+  block:
+    - name: Start Elasticsearch
+      ansible.builtin.service:
+        name: elasticsearch
+        enabled: true
+        state: started
+  rescue:
+    - name: Read Elasticsearch service status
+      ansible.builtin.command:
+        argv: [systemctl, status, elasticsearch, --no-pager, --full]
+      register: tartarus_elk_failed_status
+      changed_when: false
+      failed_when: false
+
+    - name: Read recent Elasticsearch journal
+      ansible.builtin.command:
+        argv: [journalctl, --unit, elasticsearch, --lines, "80", --no-pager]
+      register: tartarus_elk_failed_journal
+      changed_when: false
+      failed_when: false
+
+    - name: Read recent Elasticsearch application log
+      ansible.builtin.command:
+        argv: [tail, --lines, "100", /var/log/elasticsearch/tartarus.log]
+      register: tartarus_elk_failed_application_log
+      changed_when: false
+      failed_when: false
+
+    - name: Report Elasticsearch startup failure
+      ansible.builtin.fail:
+        msg: |-
+          Elasticsearch failed to start.
+          {{ tartarus_elk_failed_status.stdout }}
+          {{ tartarus_elk_failed_journal.stdout }}
+          {{ tartarus_elk_failed_application_log.stdout }}
+
+- name: Flush Elasticsearch restart before credential bootstrap
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for Elasticsearch TLS endpoint
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: 9200
+    timeout: 180
+
+- name: Check for existing credential bootstrap
+  ansible.builtin.stat:
+    path: /root/tartarus-bootstrap.json
+  register: tartarus_elk_bootstrap_stat
+
+- name: Generate installation credentials once
+  when: not tartarus_elk_bootstrap_stat.stat.exists
+  no_log: true
+  block:
+    - name: Generate elastic superuser password
+      ansible.builtin.command:
+        argv: [/usr/share/elasticsearch/bin/elasticsearch-reset-password, -u, elastic, -a, -b, -s]
+      register: tartarus_elk_elastic_password_result
+      changed_when: true
+
+    - name: Generate kibana_system password
+      ansible.builtin.command:
+        argv: [/usr/share/elasticsearch/bin/elasticsearch-reset-password, -u, kibana_system, -a, -b, -s]
+      register: tartarus_elk_kibana_password_result
+      changed_when: true
+
+    - name: Create narrowly scoped agent ingestion API key
+      ansible.builtin.uri:
+        url: https://127.0.0.1:9200/_security/api_key
+        method: POST
+        user: elastic
+        password: "{{ tartarus_elk_elastic_password_result.stdout }}"
+        force_basic_auth: true
+        validate_certs: false
+        body_format: json
+        body:
+          name: tartarus-agent
+          role_descriptors:
+            tartarus_writer:
+              cluster: [monitor]
+              index:
+                - names: [logs-*, metrics-*]
+                  privileges: [auto_configure, create_doc]
+        status_code: 200
+      register: tartarus_elk_api_key_result
+
+    - name: Persist bootstrap for idempotent role reruns
+      ansible.builtin.copy:
+        dest: /root/tartarus-bootstrap.json
+        owner: root
+        group: root
+        mode: "0600"
+        content: >-
+          {{ {'elastic_password': tartarus_elk_elastic_password_result.stdout,
+              'kibana_password': tartarus_elk_kibana_password_result.stdout,
+              'agent_api_key': tartarus_elk_api_key_result.json.id ~ ':' ~ tartarus_elk_api_key_result.json.api_key} | to_json }}
+
+- name: Read credential bootstrap into memory
+  ansible.builtin.slurp:
+    src: /root/tartarus-bootstrap.json
+  register: tartarus_elk_bootstrap_file
+  no_log: true
+
+- name: Read public Elastic CA for dependent agent roles
+  ansible.builtin.slurp:
+    src: "{{ tartarus_elk_tls_dir }}/ca.crt"
+  register: tartarus_elk_ca_file
+
+- name: Publish only in-memory dependency facts
+  ansible.builtin.set_fact:
+    tartarus_elk_bootstrap: "{{ tartarus_elk_bootstrap_file.content | b64decode | from_json }}"
+    tartarus_elk_ca_pem: "{{ tartarus_elk_ca_file.content | b64decode }}"
+  no_log: true
+
+- name: Configure high-volume telemetry retention
+  ansible.builtin.uri:
+    url: https://127.0.0.1:9200/_ilm/policy/tartarus-telemetry-14d
+    method: PUT
+    user: elastic
+    password: "{{ tartarus_elk_bootstrap.elastic_password }}"
+    force_basic_auth: true
+    validate_certs: false
+    body_format: json
+    body:
+      policy:
+        phases:
+          hot: {actions: {}}
+          delete: {min_age: "{{ tartarus_elk_telemetry_retention_days }}d", actions: {delete: {}}}
+    status_code: [200]
+  no_log: true
+
+- name: Configure run metadata retention
+  ansible.builtin.uri:
+    url: https://127.0.0.1:9200/_ilm/policy/tartarus-runs-30d
+    method: PUT
+    user: elastic
+    password: "{{ tartarus_elk_bootstrap.elastic_password }}"
+    force_basic_auth: true
+    validate_certs: false
+    body_format: json
+    body:
+      policy:
+        phases:
+          hot: {actions: {}}
+          delete: {min_age: "{{ tartarus_elk_manifest_retention_days }}d", actions: {delete: {}}}
+    status_code: [200]
+  no_log: true
+
+- name: Apply Tartarus index retention templates
+  ansible.builtin.uri:
+    url: "https://127.0.0.1:9200/_index_template/{{ item.name }}"
+    method: PUT
+    user: elastic
+    password: "{{ tartarus_elk_bootstrap.elastic_password }}"
+    force_basic_auth: true
+    validate_certs: false
+    body_format: json
+    body:
+      index_patterns: "{{ item.patterns }}"
+      priority: 250
+      template:
+        settings:
+          index.lifecycle.name: "{{ item.policy }}"
+    status_code: [200]
+  loop:
+    - {name: tartarus-telemetry, patterns: ["logs-tartarus.*-*", "metrics-tartarus.*-*"], policy: tartarus-telemetry-14d}
+    - {name: tartarus-runs, patterns: ["tartarus-runs*"], policy: tartarus-runs-30d}
+  no_log: true
+
+- name: Configure TLS-protected Kibana
+  ansible.builtin.copy:
+    dest: /etc/kibana/kibana.yml
+    owner: root
+    group: kibana
+    mode: "0640"
+    content: |
+      server.host: 0.0.0.0
+      server.ssl.enabled: true
+      server.ssl.certificate: {{ tartarus_elk_tls_dir }}/kibana/kibana.crt
+      server.ssl.key: {{ tartarus_elk_tls_dir }}/kibana/kibana.key
+      elasticsearch.hosts: ["https://127.0.0.1:9200"]
+      elasticsearch.username: kibana_system
+      elasticsearch.password: "{{ tartarus_elk_bootstrap.kibana_password }}"
+      elasticsearch.ssl.certificateAuthorities: ["{{ tartarus_elk_tls_dir }}/ca.crt"]
+  no_log: true
+  notify: Restart kibana
+
+- name: Enable Kibana
+  ansible.builtin.service:
+    name: kibana
+    enabled: true
+    state: started

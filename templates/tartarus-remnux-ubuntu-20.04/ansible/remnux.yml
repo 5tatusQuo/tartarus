@@ -1,0 +1,137 @@
+---
+- name: Build the pinned Tartarus REMnux template
+  hosts: all
+  become: true
+  tasks:
+    - name: Create the locked REMnux distribution account
+      ansible.builtin.user:
+        name: remnux
+        shell: /bin/bash
+        password_lock: true
+
+    - name: Create the verified build artifact cache
+      ansible.builtin.file:
+        path: /var/cache/tartarus
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Download and verify pinned REMnux build artifacts
+      ansible.builtin.get_url:
+        url: "{{ item.url }}"
+        dest: "/var/cache/tartarus/{{ item.name }}"
+        checksum: "sha256:{{ item.digest }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop:
+        - name: remnux-cli-1.4.3-linux
+          url: https://github.com/REMnux/remnux-cli/releases/download/v1.4.3/remnux-cli-linux
+          digest: c8c6d6830cfeb48c9ada2b49c76523c8637d95dc41d00aac345282fb47021f8e
+        - name: zeek-7.2.2.tar.gz
+          url: https://github.com/zeek/zeek/releases/download/v7.2.2/zeek-7.2.2.tar.gz
+          digest: 2b1df248f94199a1684e1c460d64cf1c5e49d7471c2b562f942ac5fbe9805893
+        - name: remnux-salt-states-v2024.44.3.tar.gz
+          url: https://github.com/REMnux/salt-states/archive/v2024.44.3.tar.gz
+          digest: eaa5a44346030b7a96f8a4531cc21976527fd88483c5a3e11f0670cc87f2db69
+        - name: remnux-salt-states-v2024.44.3.tar.gz.asc
+          url: https://github.com/REMnux/salt-states/releases/download/v2024.44.3/remnux-salt-states-v2024.44.3.tar.gz.asc
+          digest: dda936b5ac39f217997dc9b318ec7bab17f7d6f270ca153c5548b6188b399782
+        - name: remnux-salt-states-v2024.44.3.tar.gz.sha256
+          url: https://github.com/REMnux/salt-states/releases/download/v2024.44.3/remnux-salt-states-v2024.44.3.tar.gz.sha256
+          digest: 3725ffffe92d1bcaa487f299fed7cf2fdc83d06333699fa13f988ec4a10cf1bc
+        - name: remnux-salt-states-v2024.44.3.tar.gz.sha256.asc
+          url: https://github.com/REMnux/salt-states/releases/download/v2024.44.3/remnux-salt-states-v2024.44.3.tar.gz.sha256.asc
+          digest: e38a0b136b2f2e3c2d2256b9d3188991e379c4497e029ad9bf660df2ddfaadf0
+        - name: ghidra_11.4.2_PUBLIC_20250826.zip
+          url: https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_11.4.2_build/ghidra_11.4.2_PUBLIC_20250826.zip
+          digest: 795a02076af16257bd6f3f4736c4fc152ce9ff1f95df35cd47e2adc086e037a6
+        - name: r2mcp_1.8.8_amd64.deb
+          url: https://github.com/radareorg/radare2-mcp/releases/download/1.8.8/r2mcp_1.8.8_amd64.deb
+          digest: 1de404fd88881fd2a543c6c4e552a688f2120966c809da4bbfec9594ec669000
+        - name: gdb-mcp-v0.4.0.tar.gz
+          url: https://codeload.github.com/BeaCox/gdb-mcp/tar.gz/250f670aee9bc32a95522e28b8c499d2e7b9d107
+          digest: ed7738eaf0607576148cd83c525fefcbec173b21174c570e1b9f40c778aa658e
+        - name: radare2_6.0.4_amd64.deb
+          url: https://github.com/radareorg/radare2/releases/download/6.0.4/radare2_6.0.4_amd64.deb
+          digest: 5bed66a800933455569a03e607727c2121a4c632a74fe280c0b8c71bd2010b7b
+        - name: gdb-15.2.tar.xz
+          url: https://ftp.gnu.org/gnu/gdb/gdb-15.2.tar.xz
+          digest: 83350ccd35b5b5a0cba6b334c41294ea968158c573940904f00b92f76345314d
+
+    - name: Install the checksum-locked official REMnux installer
+      ansible.builtin.copy:
+        src: /var/cache/tartarus/remnux-cli-1.4.3-linux
+        dest: /usr/local/bin/remnux
+        owner: root
+        group: root
+        mode: "0755"
+        remote_src: true
+
+    - name: Create the pinned REMnux release cache
+      ansible.builtin.file:
+        path: /var/cache/remnux/cli/v2024.44.3
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Preload the signed pinned REMnux release inputs
+      ansible.builtin.copy:
+        src: "/var/cache/tartarus/{{ item }}"
+        dest: "/var/cache/remnux/cli/v2024.44.3/{{ item }}"
+        owner: root
+        group: root
+        mode: "0644"
+        remote_src: true
+      loop:
+        - remnux-salt-states-v2024.44.3.tar.gz
+        - remnux-salt-states-v2024.44.3.tar.gz.asc
+        - remnux-salt-states-v2024.44.3.tar.gz.sha256
+        - remnux-salt-states-v2024.44.3.tar.gz.sha256.asc
+
+    - name: Install the pinned REMnux distribution release
+      ansible.builtin.command:
+        argv:
+          - /usr/local/bin/remnux
+          - install
+          - --mode=cloud
+          - --user=remnux
+          - --version=v2024.44.3
+        creates: /etc/remnux-config
+
+    - name: Reboot after REMnux installation
+      ansible.builtin.reboot:
+        reboot_timeout: 1800
+
+    - name: Unpack the pinned Zeek source release
+      ansible.builtin.unarchive:
+        src: /var/cache/tartarus/zeek-7.2.2.tar.gz
+        dest: /opt
+        remote_src: true
+        creates: /opt/zeek-7.2.2/configure
+
+    - name: Configure the pinned Zeek build
+      ansible.builtin.command:
+        argv: [./configure, --prefix=/opt/zeek-7.2.2-install]
+        chdir: /opt/zeek-7.2.2
+        creates: /opt/zeek-7.2.2/build/Makefile
+
+    - name: Build the pinned Zeek release
+      ansible.builtin.command:
+        argv: [make, -j2]
+        chdir: /opt/zeek-7.2.2/build
+        creates: /opt/zeek-7.2.2/build/src/zeek
+
+    - name: Install the pinned Zeek release
+      ansible.builtin.command:
+        argv: [make, install]
+        chdir: /opt/zeek-7.2.2/build
+        creates: /opt/zeek-7.2.2-install/bin/zeek
+
+    - name: Publish the pinned Zeek command
+      ansible.builtin.file:
+        src: /opt/zeek-7.2.2-install/bin/zeek
+        dest: /usr/local/bin/zeek
+        state: link

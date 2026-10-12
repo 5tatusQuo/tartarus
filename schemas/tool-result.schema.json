@@ -1,0 +1,1 @@
+{"$schema":"https://json-schema.org/draft/2020-12/schema","title":"ToolResult","type":"object","additionalProperties":false,"required":["schema_version","ok","operation"],"properties":{"schema_version":{"const":"1.0"},"ok":{"type":"boolean"},"operation":{"type":"string","minLength":1},"data":{},"error":{"type":["string","null"]}}}

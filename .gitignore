@@ -1,0 +1,51 @@
+# Local operator documentation
+Ludus-Connection-Guide.md
+
+# Tartarus configuration and secrets
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+*.token
+*.wireguard.conf
+*.wg.conf
+config.local.*
+secrets/
+
+# Samples, evidence, and generated artifacts
+samples/
+evidence/
+artifacts/cache/
+artifacts/generated/
+runs/
+cases/
+*.pcap
+*.pcapng
+*.core
+*.dmp
+
+# Generated deployment state
+.tartarus/
+generated/
+deployment-manifest.local.json
+verification-report.local.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+dist/
+build/
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/

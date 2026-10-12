@@ -1,0 +1,75 @@
+---
+- name: Install bounded telemetry prerequisites
+  ansible.builtin.apt:
+    name: [auditd, audispd-plugins, jq, rsync]
+    state: present
+    update_cache: false
+
+- name: Create protected Tartarus package cache
+  ansible.builtin.file:
+    path: /var/cache/tartarus
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Create journald drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/journald.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Make journald storage persistent and bounded
+  ansible.builtin.copy:
+    dest: /etc/systemd/journald.conf.d/tartarus.conf
+    mode: "0644"
+    content: |
+      [Journal]
+      Storage=persistent
+      SystemMaxUse={{ tartarus_common_journal_max_use }}
+      RateLimitIntervalSec=30s
+      RateLimitBurst=10000
+  notify: Restart journald
+
+- name: Install the Tartarus audit rules
+  ansible.builtin.copy:
+    dest: /etc/audit/rules.d/tartarus.rules
+    mode: "0600"
+    content: "{{ tartarus_common_audit_rules | join('\n') }}\n"
+  notify: Reload audit rules
+
+- name: Disable guest IPv6 until equivalent filtering is accepted
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/99-tartarus-ipv6.conf
+    mode: "0644"
+    content: |
+      net.ipv6.conf.all.disable_ipv6 = 1
+      net.ipv6.conf.default.disable_ipv6 = 1
+  when: tartarus_common_disable_ipv6 | bool
+  notify: Reload sysctl
+
+- name: Ensure auditd is enabled
+  ansible.builtin.service:
+    name: auditd
+    enabled: true
+    state: started
+
+- name: Create controller SSH directory
+  ansible.builtin.file:
+    path: "/home/{{ tartarus_common_controller_user }}/.ssh"
+    state: directory
+    owner: "{{ tartarus_common_controller_user }}"
+    group: "{{ tartarus_common_controller_user }}"
+    mode: "0700"
+  when: tartarus_common_controller_ssh_public_key | length > 0
+- name: Authorize the installation-specific controller key
+  ansible.builtin.lineinfile:
+    path: "/home/{{ tartarus_common_controller_user }}/.ssh/authorized_keys"
+    line: "{{ tartarus_common_controller_ssh_public_key }}"
+    create: true
+    owner: "{{ tartarus_common_controller_user }}"
+    group: "{{ tartarus_common_controller_user }}"
+    mode: "0600"
+  when: tartarus_common_controller_ssh_public_key | length > 0

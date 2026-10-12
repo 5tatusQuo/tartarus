@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tartarus-controller"
+version = "0.1.0"
+description = "Portable controller for a contained Ludus Linux malware-analysis range"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "platformdirs==4.12.4",
+  "PyYAML==6.0.3",
+  "jsonschema==4.26.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==8.4.2", "ruff==0.17.0"]
+
+[project.scripts]
+tartarus = "tartarus.cli:main"
+tartarus-mcp = "tartarus.mcp_gateway:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["controller/tartarus"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

@@ -1,0 +1,6 @@
+galaxy_info:
+  author: Tartarus contributors
+  description: Tartarus capture and bounded analysis additions for REMnux
+  license: unlicensed
+  min_ansible_version: "2.15"
+dependencies: []
