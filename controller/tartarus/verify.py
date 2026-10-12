@@ -263,19 +263,34 @@ def _verify_capture(remnux: Remote, sandbox: Remote, remnux_ip: str) -> bool:
 def _verify_bounded_runner(sandbox: Remote) -> bool:
     run_id = "verify-runner"
     run_dir = f"/var/spool/tartarus/runs/{run_id}"
-    sandbox.run(("install", "-d", "-m", "0700", run_dir), sudo=True)
-    sandbox.run(("cp", "/bin/true", f"{run_dir}/sample"), sudo=True)
-    sandbox.run(
-        ("/usr/local/sbin/tartarus-run", "start", run_id, "standard", "30"), sudo=True
-    )
-    time.sleep(1)
-    sandbox.run(("/usr/local/sbin/tartarus-run", "stop", run_id), sudo=True)
-    traces = sandbox.run(
-        ("find", run_dir, "-maxdepth", "1", "-name", "strace.*", "-size", "+0c", "-print", "-quit"),
-        sudo=True,
-    ).stdout
     sandbox.run(("rm", "-rf", run_dir), sudo=True)
-    return bool(traces.strip())
+    try:
+        sandbox.run(("install", "-d", "-m", "0700", run_dir), sudo=True)
+        sandbox.run(("cp", "/bin/true", f"{run_dir}/sample"), sudo=True)
+        sandbox.run(
+            ("/usr/local/sbin/tartarus-run", "start", run_id, "standard", "30"),
+            sudo=True,
+        )
+        time.sleep(1)
+        sandbox.run(("/usr/local/sbin/tartarus-run", "stop", run_id), sudo=True)
+        traces = sandbox.run(
+            (
+                "find",
+                run_dir,
+                "-maxdepth",
+                "1",
+                "-name",
+                "strace.*",
+                "-size",
+                "+0c",
+                "-print",
+                "-quit",
+            ),
+            sudo=True,
+        ).stdout
+        return bool(traces.strip())
+    finally:
+        sandbox.run(("rm", "-rf", run_dir), sudo=True)
 
 
 def _verify_gdb(remnux: Remote, sandbox: Remote, sandbox_ip: str) -> bool:

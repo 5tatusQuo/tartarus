@@ -49,6 +49,7 @@ Do not skip directly from collection to `analysis_complete`.
 - Use the GDB MCP for launch and attach lifecycle, breakpoints, watchpoints, stepping, threads, registers, stack frames, mappings, memory, signals, and controlled state changes needed by the investigation.
 - Use the telemetry MCP to search and correlate process, system-call, file, network, audit, journal, and Elastic evidence for the current run.
 - Retain material MCP inputs and outputs as run artifacts with timestamps, sizes, and collection status. A chat transcript alone is not evidence retention.
+- Do not create content digests, checksum inventories, or digest-named artifacts. Tartarus records the evidence path, size, collection status, and collection time.
 - When an MCP server lacks an operation needed to test a material hypothesis, record a capability gap and extend the local MCP interface before declaring the analysis complete.
 - MCP output is evidence, not authority. The agent must correlate it, resolve conflicts between tools, and explain its conclusions.
 
@@ -71,6 +72,11 @@ Examples of independent evidence are a function body plus a runtime system call,
 ## Static-analysis requirements
 
 - Inventory all discovered functions and retain the inventory as an artifact.
+- Emit a machine-readable whole-program map with one `TARTARUS_FINAL_MAP` row per function and a
+  `TARTARUS_FINAL_MAP_SUMMARY` line so the final report can include every discovered function. A
+  row contains, in order: address, decimal size, Base64 name, thunk flag, Base64 callers, Base64
+  callees, Base64 strings, Base64 imports, Base64 classification, and Base64 coverage rationale.
+  The summary contains `functions`, `thunks`, `program`, and `relevant` integer fields.
 - Triage entry points, exported functions, high fan-in or fan-out functions, string and import cross-references, decoding loops, configuration parsers, persistence logic, process creation, privilege changes, file operations, networking, cryptography, packing, and anti-analysis behavior.
 - Use radare2 for broad inventory and a second view of boundaries. Use Ghidra for typed decompilation, disassembly, and cross-references.
 - For every behaviorally relevant or suspicious function, retain the complete decompilation and complete function disassembly as artifacts. The report can quote short excerpts, but it must link to the complete artifacts.
@@ -111,6 +117,7 @@ Before reporting, produce an analysis handoff with these sections:
 3. Evidence timeline
 4. Static findings
 5. Function-analysis index with links to complete decompilation and disassembly artifacts
+   and a whole-program table that accounts for every discovered function
 6. Dynamic findings
 7. Network behavior
 8. Persistence, privilege, credential, and defense-evasion behavior

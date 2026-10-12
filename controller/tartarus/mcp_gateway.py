@@ -4,6 +4,7 @@ import json
 import re
 import sys
 import tempfile
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -168,6 +169,7 @@ def _execute_tool(
     run_id = run["run_id"]
     guests = range_guests(config, range_id)
     remnux = Remote(config, guests["remnux"])
+    sandbox = Remote(config, guests["sandbox"])
     sample = f"/var/spool/tartarus/static/{run_id}/sample"
 
     if name == "analysis_capabilities":
@@ -237,7 +239,14 @@ def _execute_tool(
             commands = [f"x/{length}bx {_string(arguments, 'address')}"]
         else:
             commands = _string_list(arguments, "commands")
-        return _gdb_execute(remnux, guests["sandbox"].address, sample, commands)
+        return _gdb_execute_resilient(
+            remnux,
+            sandbox,
+            guests["sandbox"].address,
+            sample,
+            run_id,
+            commands,
+        )
 
     raise TartarusError(f"unknown analysis tool: {name}")
 
@@ -279,6 +288,76 @@ def _gdb_execute(remote: Remote, sandbox_address: str, sample: str, commands: li
             raise TartarusError("GDB command contains a NUL byte")
         argv.extend(("-ex", command))
     return _tool_output(remote.run(tuple(argv), timeout=900).stdout)
+
+
+def _gdb_execute_resilient(
+    remnux: Remote,
+    sandbox: Remote,
+    sandbox_address: str,
+    sample: str,
+    run_id: str,
+    commands: list[str],
+) -> str:
+    restarted = False
+    if not _gdbserver_listening(sandbox):
+        _restart_gdbserver(sandbox, run_id)
+        restarted = True
+    try:
+        output = _gdb_execute(remnux, sandbox_address, sample, commands)
+    except TartarusError:
+        if restarted:
+            raise
+        _restart_gdbserver(sandbox, run_id)
+        restarted = True
+        output = _gdb_execute(remnux, sandbox_address, sample, commands)
+    if restarted:
+        return "TARTARUS: debugger session restarted at sample entry\n" + output
+    return output
+
+
+def _gdbserver_listening(sandbox: Remote) -> bool:
+    return bool(
+        sandbox.run(
+            ("ss", "-H", "-lnt", "sport", "=", ":2345"),
+            timeout=60,
+        ).stdout.strip()
+    )
+
+
+def _restart_gdbserver(sandbox: Remote, run_id: str) -> None:
+    try:
+        sandbox.run(("pkill", "-u", "tartarus-runner", "-x", "gdbserver"), sudo=True)
+    except TartarusError:
+        pass
+    run_dir = f"/var/spool/tartarus/runs/{run_id}"
+    unit = f"tartarus-gdb-mcp-{uuid.uuid4().hex[:8]}.service"
+    sandbox.run(
+        (
+            "systemd-run",
+            "--unit",
+            unit,
+            "--slice",
+            "tartarus-runner.slice",
+            "--collect",
+            "--property=RuntimeMaxSec=900s",
+            "--property=KillMode=control-group",
+            "--property=NoNewPrivileges=yes",
+            "--property=LimitFSIZE=1073741824",
+            f"--property=StandardOutput=append:{run_dir}/gdb-mcp.stdout.log",
+            f"--property=StandardError=append:{run_dir}/gdb-mcp.stderr.log",
+            "--uid=tartarus-runner",
+            "--gid=tartarus-runner",
+            f"--working-directory={run_dir}",
+            "gdbserver",
+            ":2345",
+            "./sample",
+        ),
+        sudo=True,
+        timeout=60,
+    )
+    time.sleep(1)
+    if not _gdbserver_listening(sandbox):
+        raise TartarusError("restarted gdbserver did not open the analysis port")
 
 
 def _capabilities(remote: Remote) -> dict[str, Any]:

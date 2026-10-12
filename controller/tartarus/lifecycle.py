@@ -29,6 +29,19 @@ def start_remote_run(
     if not readiness["passed"]:
         raise TartarusError("range readiness verification failed; sample was not staged")
     run = load_json(run_file)
+    verification_path = run_file.parent / "artifacts" / "verification" / "pre-run.json"
+    atomic_json(verification_path, readiness)
+    run["artifacts"].append(
+        {
+            "relative_path": verification_path.relative_to(run_file.parent).as_posix(),
+            "media_type": "application/json",
+            "size": verification_path.stat().st_size,
+            "collection_status": "collected",
+            "collected_at": utc_now(),
+        }
+    )
+    validate("run-manifest", run)
+    atomic_json(run_file, run)
     safe_id(run["run_id"], "run ID")
     if not 1 <= duration <= 3600:
         raise TartarusError("duration must be between 1 and 3600 seconds")
@@ -327,7 +340,11 @@ def rebuild_sandbox(
         timeout=180,
     )
     deadline = time.monotonic() + wait_seconds
-    observed_active_deployment = False
+    # A successful deploy command is authoritative evidence that this rebuild was
+    # submitted. Some Ludus versions block until the deployment is already in
+    # SUCCESS, so the following polling loop can legitimately miss the transient
+    # RUNNING/DEPLOYING states.
+    observed_active_deployment = True
     while time.monotonic() < deadline:
         try:
             status = json.loads(

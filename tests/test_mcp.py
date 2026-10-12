@@ -8,6 +8,7 @@ from tartarus.mcp_gateway import (
     FUNCTION_RE,
     TOOLS,
     _gdb_execute,
+    _gdb_execute_resilient,
     _record_tool_result,
     _require_debug_run,
     _script_name,
@@ -74,6 +75,41 @@ def test_gdb_execute_preserves_a_multi_command_analysis_sequence() -> None:
     assert "target remote 10.1.30.30:2345" in rendered
     for value in ("break main", "continue", "info threads", "x/32gx $sp"):
         assert value in rendered
+
+
+class RestartingSandbox:
+    def __init__(self) -> None:
+        self.listening = False
+        self.commands: list[tuple[str, ...]] = []
+
+    def run(self, command, *, sudo=False, timeout=120):
+        self.commands.append(command)
+        if command[0] == "ss":
+            return SimpleNamespace(stdout="LISTEN\n" if self.listening else "")
+        if command[0] == "pkill":
+            raise TartarusError("no old debugger")
+        if command[0] == "systemd-run":
+            self.listening = True
+            return SimpleNamespace(stdout="started\n")
+        raise AssertionError(command)
+
+
+def test_gdb_execute_restarts_a_consumed_debugger_session(monkeypatch) -> None:
+    remnux = RecordingRemote()
+    sandbox = RestartingSandbox()
+    monkeypatch.setattr("tartarus.mcp_gateway.time.sleep", lambda _seconds: None)
+
+    output = _gdb_execute_resilient(
+        remnux,
+        sandbox,
+        "10.1.30.30",
+        "/var/spool/tartarus/static/run-1/sample",
+        "run-1",
+        ["break main", "continue"],
+    )
+
+    assert output.startswith("TARTARUS: debugger session restarted at sample entry")
+    assert any(command[0] == "systemd-run" for command in sandbox.commands)
 
 
 def test_each_tool_result_is_added_to_the_run_manifest(tmp_path: Path) -> None:

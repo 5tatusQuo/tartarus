@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tartarus.invalid/schemas/analysis-journal.schema.json",
+  "title": "AnalysisJournal",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "analysis_state",
+    "states",
+    "tool_families",
+    "hypotheses",
+    "function_coverage",
+    "material_findings",
+    "visibility_gaps",
+    "next_actions"
+  ],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0"},
+    "analysis_state": {"enum": ["analysis_complete", "analysis_incomplete"]},
+    "states": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["state", "summary", "evidence_refs"],
+        "properties": {
+          "state": {
+            "enum": [
+              "intake",
+              "verified",
+              "static_triage",
+              "static_deep_dive",
+              "dynamic_observation",
+              "hypothesis_testing",
+              "coverage_review",
+              "analysis_complete",
+              "analysis_incomplete"
+            ]
+          },
+          "summary": {"type": "string", "minLength": 1},
+          "evidence_refs": {"$ref": "#/$defs/evidenceRefs"}
+        }
+      }
+    },
+    "tool_families": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ghidra", "radare2", "gdb", "telemetry"],
+      "properties": {
+        "ghidra": {"$ref": "#/$defs/toolFamily"},
+        "radare2": {"$ref": "#/$defs/toolFamily"},
+        "gdb": {"$ref": "#/$defs/toolFamily"},
+        "telemetry": {"$ref": "#/$defs/toolFamily"}
+      }
+    },
+    "hypotheses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["hypothesis", "result", "confidence", "evidence_refs"],
+        "properties": {
+          "hypothesis": {"type": "string", "minLength": 1},
+          "result": {"enum": ["confirmed", "rejected", "unresolved"]},
+          "confidence": {"enum": ["high", "medium", "low"]},
+          "evidence_refs": {"$ref": "#/$defs/evidenceRefs"}
+        }
+      }
+    },
+    "function_coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ghidra_count",
+        "radare2_count",
+        "accounted_for",
+        "inventory_refs",
+        "deep_analysis_count",
+        "excluded_thunk_count",
+        "explanation"
+      ],
+      "properties": {
+        "ghidra_count": {"type": "integer", "minimum": 0},
+        "radare2_count": {"type": "integer", "minimum": 0},
+        "accounted_for": {"type": "boolean"},
+        "inventory_refs": {"$ref": "#/$defs/evidenceRefs"},
+        "deep_analysis_count": {"type": "integer", "minimum": 0},
+        "excluded_thunk_count": {"type": "integer", "minimum": 0},
+        "explanation": {"type": "string", "minLength": 1}
+      }
+    },
+    "material_findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["claim", "classification", "confidence", "evidence_refs"],
+        "properties": {
+          "claim": {"type": "string", "minLength": 1},
+          "classification": {"enum": ["observed", "inferred", "unresolved"]},
+          "confidence": {"enum": ["high", "medium", "low"]},
+          "evidence_refs": {"$ref": "#/$defs/evidenceRefs"}
+        }
+      }
+    },
+    "visibility_gaps": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "next_actions": {"type": "array", "items": {"type": "string", "minLength": 1}}
+  },
+  "$defs": {
+    "evidenceRefs": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^[^/].*$", "minLength": 1}
+    },
+    "toolFamily": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["used", "successful_calls", "evidence_refs", "summary"],
+      "properties": {
+        "used": {"type": "boolean"},
+        "successful_calls": {"type": "integer", "minimum": 0},
+        "evidence_refs": {"$ref": "#/$defs/evidenceRefs"},
+        "summary": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

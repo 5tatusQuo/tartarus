@@ -187,7 +187,24 @@ It does not change the repository.
      --yes
    ```
 
-4. Collect an additional local artifact if necessary.
+4. Run the autonomous analysis agent.
+
+   Run the autonomous analysis agent before stopping a debug run:
+
+   ```bash
+   tartarus run analyze \
+     --case-id demo \
+     --run-id <run-id>
+   ```
+
+   Start the run with `--debug` and use the `deep` telemetry profile when you need GDB-driven
+   hypothesis testing and full telemetry correlation. The analysis agent connects only to the
+   run-scoped local Tartarus and radare2 MCP servers. It drives Ghidra, native radare2, GDB, and
+   telemetry, retains every MCP result, reconciles function inventories, and emits a validated
+   analysis journal. It reports `analysis_complete` only after all required tool families and the
+   function-coverage gate pass.
+
+5. Collect an additional local artifact if necessary.
 
    ```bash
    tartarus run collect \
@@ -196,7 +213,7 @@ It does not change the repository.
      ./capture.pcapng
    ```
 
-5. Stop the run and recover the sandbox.
+6. Stop the run and recover the sandbox.
 
    ```bash
    tartarus run stop \
@@ -220,6 +237,9 @@ The controller does not give a guest write access to the evidence root.
 Each completed run contains a `run.json` manifest and an AI-generated `report.md` report.
 The manifest records artifact paths, sizes, and collection status.
 It also records visibility gaps and the sandbox recovery result.
+The report embeds the complete Ghidra function map. Each discovered program function and import
+thunk includes its address, size, callers, callees, imports, referenced strings, classification,
+and coverage rationale. Complete decompilation and disassembly exports remain linked evidence.
 
 The reporting agent follows [the reporting instructions](reporting/AGENTS.md).
 It examines retained MCP, static, debugger, telemetry, trace, packet, and run evidence.
@@ -237,7 +257,18 @@ tartarus report generate \
   --output <path>
 ```
 
-This command does not overwrite the report in the run directory.
+Render an existing agent handoff again after a presentation-layer update without repeating the
+agent's analysis:
+
+```bash
+tartarus report render \
+  --case-id <case-id> \
+  --run-id <run-id> \
+  --replace
+```
+
+`report generate` does not overwrite an existing report. `report render` overwrites only when you
+give `--replace`.
 Use `--model` to select a configured Codex model.
 Use `--local-provider ollama` or `--local-provider lmstudio` to keep model inference on the
 controller. Without this option, Codex uses its configured provider, which receives the evidence

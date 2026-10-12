@@ -19,6 +19,7 @@ The structured handoff that you return is the source for the final Markdown repo
   occur in an older run directory. Tartarus no longer uses that data.
 - Do not calculate or report content-derived sample identifiers. Use the `sample_id` from
   `context.json`.
+- Do not create content digests, checksum inventories, or digest-named artifacts.
 - Artifact collection mechanisms are outside report scope. Do not discuss their presence,
   absence, strength, or limitations.
 
@@ -29,6 +30,9 @@ The structured handoff that you return is the source for the final Markdown repo
 - Corroborate material behavior with independent evidence types when possible.
 - Give each finding a confidence level and evidence references.
 - Include every behaviorally relevant function in the function index. Link its complete retained decompilation and disassembly, or state the exact gap.
+- Include the retained whole-program function map in the final report. Every discovered program
+  function and import thunk must appear with its address, size, relationships, classification,
+  referenced imports or strings, and coverage rationale.
 - Extract IOCs only when they are sample-derived and supported. Keep laboratory infrastructure and benign observables separate.
 - Map MITRE ATT&CK techniques only when the evidence satisfies the technique behavior.
 - Make no APT or malware-family attribution without distinctive corroborating evidence.

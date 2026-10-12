@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import html
 import json
 import os
 import re
@@ -18,6 +20,8 @@ from .util import atomic_json, load_json, new_id, utc_now
 REPORT_TIMEOUT_SECONDS = 3600
 REPORT_ATTEMPTS = 3
 OPAQUE_CONTENT_IDENTIFIER = re.compile(r"(?<![A-Fa-f0-9])[A-Fa-f0-9]{64,128}(?![A-Fa-f0-9])")
+WHOLE_PROGRAM_MAP_SCRIPT = "TartarusFinalWholeProgramMap.java"
+DEEP_FUNCTION_EXPORT_SCRIPT = "TartarusFinalRelevantDeepExport.java"
 
 
 def generate_agent_report(
@@ -110,6 +114,44 @@ def generate_agent_report(
         "handoff": str(handoff_path),
         "session": session_dir.name,
         "attempts": attempts_used,
+        "manifest_updated": recorded,
+    }
+
+
+def render_retained_report(
+    run_file: Path,
+    handoff_path: Path,
+    output: Path,
+    *,
+    replace: bool = False,
+) -> dict[str, Any]:
+    """Render a previously validated agent handoff without repeating agent inference."""
+    run_file = run_file.resolve(strict=True)
+    run_dir = run_file.parent
+    handoff_path = handoff_path.resolve(strict=True)
+    if not handoff_path.is_relative_to(run_dir):
+        raise TartarusError("analysis handoff must be inside the run directory")
+    run = load_json(run_file)
+    if run.get("status") not in {"collected", "collected_with_gaps", "failed"}:
+        raise TartarusError("report rendering requires a stopped run with collected evidence")
+    handoff = load_json(handoff_path)
+    validate("analysis-handoff", handoff)
+    permitted_evidence = {
+        path.relative_to(run_dir).as_posix()
+        for path in run_dir.rglob("*")
+        if path.is_file() and not path.is_symlink()
+    }
+    _validate_handoff(run_dir, handoff, permitted_evidence)
+    if output.exists() and not replace:
+        raise TartarusError(f"refusing to overwrite report: {output}")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(_render_report(run, handoff, run_dir, output), encoding="utf-8")
+    output.chmod(0o600)
+    recorded = _record_outputs(run_file, handoff_path.parent, output)
+    return {
+        "analysis_state": handoff["analysis_state"],
+        "report": str(output),
+        "handoff": str(handoff_path),
         "manifest_updated": recorded,
     }
 
@@ -329,10 +371,12 @@ def _record_outputs(run_file: Path, session_dir: Path, output: Path) -> bool:
     paths = [path for path in sorted(session_dir.iterdir()) if path.is_file()]
     if output.resolve().is_relative_to(run_dir):
         paths.append(output.resolve())
-    existing = {item["relative_path"] for item in run["artifacts"]}
+    existing = {item["relative_path"]: item for item in run["artifacts"]}
     for path in paths:
         relative = path.relative_to(run_dir).as_posix()
         if relative in existing:
+            existing[relative]["media_type"] = _media_type(path)
+            existing[relative]["size"] = path.stat().st_size
             continue
         run["artifacts"].append(
             {
@@ -417,6 +461,7 @@ def _render_report(
             )
     else:
         lines.append("No behaviorally relevant function analysis was retained.")
+    _complete_function_map(lines, run_dir, output)
     _claim_section(lines, "Dynamic findings", handoff["dynamic_findings"], run_dir, output)
     _claim_section(lines, "Network behavior", handoff["network_behavior"], run_dir, output)
     _claim_section(
@@ -503,6 +548,149 @@ def _render_report(
             f"- {_artifact_link(item['path'], run_dir, output)} — {item['description']}"
         )
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _complete_function_map(lines: list[str], run_dir: Path, output: Path) -> None:
+    lines.extend(["", "## Complete function map", ""])
+    artifact = _ghidra_script_artifact(
+        run_dir, WHOLE_PROGRAM_MAP_SCRIPT, "TARTARUS_FINAL_MAP_SUMMARY"
+    )
+    if artifact is None:
+        lines.append("No retained whole-program Ghidra map was available.")
+        return
+    relative, result = artifact
+    rows, summary = _parse_whole_program_map(result)
+    deep = _ghidra_script_artifact(
+        run_dir, DEEP_FUNCTION_EXPORT_SCRIPT, "TARTARUS_FINAL_DEEP_SUMMARY"
+    )
+    lines.append(
+        f"This table maps all **{summary['functions']}** functions discovered by Ghidra: "
+        f"**{summary['program']}** local program functions and **{summary['thunks']}** import "
+        f"thunks. It classifies **{summary['relevant']}** functions as behaviorally relevant. "
+        f"The retained source map is {_artifact_link(relative, run_dir, output)}."
+    )
+    if deep is not None:
+        lines.extend(
+            [
+                "",
+                (
+                    "Complete decompilation and instruction-level disassembly for every "
+                    "behaviorally relevant function are retained in "
+                    f"{_artifact_link(deep[0], run_dir, output)}."
+                ),
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "| Address | Size | Function | Kind | Classification | Callers | Callees | Imports | Referenced strings | Coverage rationale |",
+            "|---|---:|---|---|---|---|---|---|---|---|",
+        ]
+    )
+    for row in rows:
+        kind = "import thunk" if row["thunk"] else "program"
+        cells = [
+            row["address"],
+            str(row["size"]),
+            row["name"],
+            kind,
+            row["classification"],
+            row["callers"] or "—",
+            row["callees"] or "—",
+            row["imports"] or "—",
+            row["strings"] or "—",
+            row["reason"],
+        ]
+        lines.append("| " + " | ".join(_markdown_cell(cell) for cell in cells) + " |")
+
+
+def _ghidra_script_artifact(
+    run_dir: Path, script_name: str, result_marker: str
+) -> tuple[str, str] | None:
+    matches: list[tuple[Path, str]] = []
+    for path in (run_dir / "artifacts" / "mcp").glob("ghidra_script-*.json"):
+        try:
+            document = load_json(path)
+        except (OSError, json.JSONDecodeError):
+            continue
+        data = document.get("data")
+        if not isinstance(data, dict):
+            continue
+        arguments = data.get("arguments")
+        result = data.get("result")
+        if (
+            isinstance(arguments, dict)
+            and isinstance(result, str)
+            and (arguments.get("script_name") == script_name or result_marker in result)
+        ):
+            matches.append((path, result))
+    if not matches:
+        return None
+    path, result = max(matches, key=lambda item: item[0].stat().st_mtime_ns)
+    return path.relative_to(run_dir).as_posix(), result
+
+
+def _parse_whole_program_map(result: str) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    rows: list[dict[str, Any]] = []
+    summary: dict[str, int] | None = None
+    for line in result.splitlines():
+        marker = line.find("TARTARUS_FINAL_MAP\t")
+        if marker >= 0:
+            fields = _strip_ghidra_suffix(line[marker:]).split("\t")
+            if len(fields) != 11:
+                raise TartarusError("retained whole-program map contains a malformed function row")
+            try:
+                size = int(fields[2])
+            except ValueError as exc:
+                raise TartarusError(
+                    "retained whole-program map contains a nonnumeric function size"
+                ) from exc
+            rows.append(
+                {
+                    "address": fields[1],
+                    "size": size,
+                    "name": _decode_map_field(fields[3]),
+                    "thunk": fields[4] == "true",
+                    "callers": _decode_map_field(fields[5]),
+                    "callees": _decode_map_field(fields[6]),
+                    "strings": _decode_map_field(fields[7]),
+                    "imports": _decode_map_field(fields[8]),
+                    "classification": _decode_map_field(fields[9]),
+                    "reason": _decode_map_field(fields[10]),
+                }
+            )
+            continue
+        marker = line.find("TARTARUS_FINAL_MAP_SUMMARY\t")
+        if marker >= 0:
+            values = _strip_ghidra_suffix(line[marker:]).split("\t")[1:]
+            try:
+                summary = {key: int(value) for key, value in (item.split("=", 1) for item in values)}
+            except (TypeError, ValueError) as exc:
+                raise TartarusError("retained whole-program map has a malformed summary") from exc
+    required = {"functions", "thunks", "program", "relevant"}
+    if summary is None or not required <= summary.keys():
+        raise TartarusError("retained whole-program map has no complete summary")
+    if len(rows) != summary["functions"]:
+        raise TartarusError("retained whole-program map function count does not match its summary")
+    return rows, summary
+
+
+def _decode_map_field(value: str) -> str:
+    if not value:
+        return ""
+    try:
+        return base64.b64decode(value, validate=True).decode("utf-8")
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise TartarusError("retained whole-program map contains invalid encoded text") from exc
+
+
+def _strip_ghidra_suffix(value: str) -> str:
+    return re.sub(r" \(GhidraScript\)\s*$", "", value)
+
+
+def _markdown_cell(value: object) -> str:
+    escaped = html.escape(str(value), quote=False).replace("`", "&#96;").replace("|", "&#124;")
+    return escaped.replace("\r", " ").replace("\n", "<br>")
 
 
 def _claim_section(

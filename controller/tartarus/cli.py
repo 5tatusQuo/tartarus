@@ -13,6 +13,7 @@ import yaml
 
 from . import __version__
 from .access import operator_access
+from .analysis import run_analysis_agent
 from .artifacts import acquire_artifacts, locked_artifacts
 from .bundle import create_bundle, verify_bundle
 from .config import Config, default_config_path, load_config, save_config
@@ -36,7 +37,7 @@ from .release import (
     write_prepare_manifest,
 )
 from .remote import Remote, range_guests
-from .reporting import generate_agent_report
+from .reporting import generate_agent_report, render_retained_report
 from .telemetry import record_lifecycle, telemetry_health, telemetry_search
 from .util import atomic_json, load_json, safe_id, utc_now
 from .verify import verify_range
@@ -482,7 +483,6 @@ def cmd_deploy(args: argparse.Namespace) -> None:
             config=config.ludus_config,
             timeout=300,
         )
-    deployment_started = False
     if should_start_deployment:
         print(f"starting deployment for range {range_id}")
         deploy_command = ["--range", range_id, "range", "deploy"]
@@ -490,9 +490,11 @@ def cmd_deploy(args: argparse.Namespace) -> None:
             deploy_command.append("--force")
         result = run_ludus(deploy_command, config=config.ludus_config, timeout=180)
         print(result.stdout, end="")
-        deployment_started = True
     deadline = time.monotonic() + args.wait_seconds
-    observed_active_deployment = not deployment_started
+    # Ludus can block until a deployment is already successful. A successful
+    # deploy invocation is sufficient to distinguish this operation from stale
+    # SUCCESS state even when polling misses RUNNING/DEPLOYING.
+    observed_active_deployment = True
     while time.monotonic() < deadline:
         status_result = run_ludus(
             ("--range", range_id, "testing", "status", "--json"),
@@ -683,6 +685,34 @@ def cmd_run_collect(args: argparse.Namespace) -> None:
     emit(collect_artifact(run_file, source, args.media_type))
 
 
+def cmd_run_analyze(args: argparse.Namespace) -> None:
+    config = load_config()
+    run_file = _run_file(config, args.case_id, args.run_id)
+    run = load_json(run_file)
+    announce_local_change(
+        config,
+        "run autonomous MCP analysis agent",
+        {
+            "range_id": run.get("range_id"),
+            "case_id": args.case_id,
+            "run_id": args.run_id,
+            "agent": "codex",
+            "model": args.model or "configured Codex default",
+            "reasoning_effort": args.reasoning_effort,
+            "local_provider": args.local_provider or "configured Codex provider",
+            "mcp_families": ["ghidra", "radare2", "gdb", "telemetry"],
+        },
+    )
+    emit(
+        run_analysis_agent(
+            run_file,
+            model=args.model,
+            reasoning_effort=args.reasoning_effort,
+            local_provider=args.local_provider,
+        )
+    )
+
+
 def cmd_run_stop(args: argparse.Namespace) -> None:
     config = load_config()
     run_file = _run_file(config, args.case_id, args.run_id)
@@ -814,6 +844,33 @@ def cmd_report(args: argparse.Namespace) -> None:
     )
 
 
+def cmd_report_render(args: argparse.Namespace) -> None:
+    config = load_config()
+    run_file = _run_file(config, args.case_id, args.run_id)
+    run_dir = run_file.parent
+    if args.handoff:
+        handoff = Path(args.handoff)
+    else:
+        candidates = sorted(run_dir.glob("artifacts/reporting/session-*/analysis-handoff.json"))
+        if not candidates:
+            raise TartarusError("no retained analysis handoff exists for this run")
+        handoff = candidates[-1]
+    output = Path(args.output) if args.output else run_dir / "report.md"
+    announce_local_change(
+        config,
+        "render retained analysis handoff",
+        {
+            "range_id": load_json(run_file).get("range_id"),
+            "case_id": args.case_id,
+            "run_id": args.run_id,
+            "handoff": str(handoff),
+            "output": str(output),
+            "replace": args.replace,
+        },
+    )
+    emit(render_retained_report(run_file, handoff, output, replace=args.replace))
+
+
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(prog="tartarus")
     root.add_argument("--version", action="version", version=__version__)
@@ -901,6 +958,15 @@ def parser() -> argparse.ArgumentParser:
     collect.add_argument("--media-type", default="application/octet-stream")
     collect.add_argument("--approve-quota-override", action="store_true")
     collect.set_defaults(func=cmd_run_collect)
+    analyze = run_actions.add_parser("analyze")
+    analyze.add_argument("--case-id", required=True)
+    analyze.add_argument("--run-id", required=True)
+    analyze.add_argument("--model")
+    analyze.add_argument("--local-provider", choices=("ollama", "lmstudio"))
+    analyze.add_argument(
+        "--reasoning-effort", choices=("low", "medium", "high", "xhigh"), default="high"
+    )
+    analyze.set_defaults(func=cmd_run_analyze)
     stop = run_actions.add_parser("stop")
     stop.add_argument("--case-id", required=True)
     stop.add_argument("--run-id", required=True)
@@ -952,6 +1018,13 @@ def parser() -> argparse.ArgumentParser:
         "--reasoning-effort", choices=("low", "medium", "high", "xhigh"), default="high"
     )
     generate.set_defaults(func=cmd_report)
+    render = report_actions.add_parser("render")
+    render.add_argument("--case-id", required=True)
+    render.add_argument("--run-id", required=True)
+    render.add_argument("--handoff")
+    render.add_argument("--output")
+    render.add_argument("--replace", action="store_true")
+    render.set_defaults(func=cmd_report_render)
     wireguard = commands.add_parser("wireguard")
     wg_actions = wireguard.add_subparsers(dest="wireguard_action", required=True)
     export = wg_actions.add_parser("export")
