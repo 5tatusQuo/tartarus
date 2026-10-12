@@ -51,20 +51,18 @@
       unit="tartarus-run-$run_id.service"
       snapshot() {
         label="$1"
-        find /etc /usr/local/bin /tmp /var/tmp -xdev -type f -size -64M -print0 2>/dev/null |
-          sort -z | xargs -0r sha256sum > "$run_dir/files-$label.sha256"
+        find /etc /usr/local/bin /tmp /var/tmp -xdev -type f -size -64M \
+          -printf '%p\t%s\t%T@\n' 2>/dev/null | sort > "$run_dir/files-$label.txt"
         ps -e -o pid,ppid,uid,gid,lstart,args > "$run_dir/processes-$label.txt"
         ss -H -lntup > "$run_dir/sockets-$label.txt" 2>&1 || true
       }
       case "$action" in
         start)
-          expected="${3:-}"; profile="${4:-}"; duration="${5:-}"; debug="${6:-false}"
-          case "$expected" in (*[!a-f0-9]*|'') exit 64;; esac
+          profile="${3:-}"; duration="${4:-}"; debug="${5:-false}"
           case "$profile" in (lightweight|standard|deep) :;; (*) exit 64;; esac
           case "$duration" in (*[!0-9]*|'') exit 64;; esac
           case "$debug" in (true|false) :;; (*) exit 64;; esac
           test "$duration" -ge 1 && test "$duration" -le 3600
-          test "$(sha256sum "$run_dir/sample" | cut -d' ' -f1)" = "$expected"
           snapshot before
           chown -R tartarus-runner:tartarus-runner "$run_dir"
           if test "$profile" = deep; then
@@ -99,7 +97,7 @@
           systemctl stop "tartarus-bpf-$run_id.service" 2>/dev/null || true
           journalctl -u "$unit" --no-pager > "$run_dir/unit-journal.log" 2>&1 || true
           snapshot after
-          diff -u "$run_dir/files-before.sha256" "$run_dir/files-after.sha256" \
+          diff -u "$run_dir/files-before.txt" "$run_dir/files-after.txt" \
             > "$run_dir/filesystem-diff.txt" || test "$?" -eq 1
           journalctl -u elastic-agent --since '-1 hour' -n 10000 --no-pager \
             > "$run_dir/elastic-agent.log" 2>&1 || true

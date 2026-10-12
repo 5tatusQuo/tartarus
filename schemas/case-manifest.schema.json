@@ -14,9 +14,10 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["sha256", "size", "staged_at", "media_type", "elf"],
+        "required": ["sample_id", "original_name", "size", "staged_at", "media_type", "elf"],
         "properties": {
-          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "sample_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+          "original_name": {"type": "string", "minLength": 1},
           "size": {"type": "integer", "minimum": 0},
           "staged_at": {"type": "string", "format": "date-time"},
           "media_type": {"const": "application/x-elf"},

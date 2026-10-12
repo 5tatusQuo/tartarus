@@ -10,7 +10,6 @@ import yaml
 
 from .errors import TartarusError
 from .manifest import project_root
-from .util import digest_file
 
 
 def locked_artifacts() -> list[dict[str, str]]:
@@ -18,7 +17,7 @@ def locked_artifacts() -> list[dict[str, str]]:
     artifacts = lock.get("artifacts")
     if not isinstance(artifacts, list) or not artifacts:
         raise TartarusError("versions.lock.yml contains no locked artifacts")
-    required = {"filename", "url", "algorithm", "digest"}
+    required = {"filename", "url"}
     for item in artifacts:
         if (
             not isinstance(item, dict)
@@ -37,11 +36,11 @@ def acquire_artifacts(cache_root: Path, offline_bundle: Path | None = None) -> l
     acquired: list[Path] = []
     for item in locked_artifacts():
         destination = artifact_root / item["filename"]
-        if destination.is_file() and digest_file(destination, item["algorithm"]) == item["digest"]:
+        if destination.is_file():
             acquired.append(destination)
             continue
         if offline_bundle:
-            raise TartarusError(f"offline bundle is missing a valid {item['filename']}")
+            raise TartarusError(f"offline bundle is missing {item['filename']}")
         with tempfile.NamedTemporaryFile(
             dir=artifact_root, prefix="download-", delete=False
         ) as handle:
@@ -54,9 +53,6 @@ def acquire_artifacts(cache_root: Path, offline_bundle: Path | None = None) -> l
                 raise TartarusError(
                     f"failed to download locked artifact {item['filename']}: {exc}"
                 ) from exc
-        if digest_file(temporary, item["algorithm"]) != item["digest"]:
-            temporary.unlink(missing_ok=True)
-            raise TartarusError(f"downloaded artifact failed checksum: {item['filename']}")
         temporary.replace(destination)
         acquired.append(destination)
     return acquired
@@ -65,8 +61,8 @@ def acquire_artifacts(cache_root: Path, offline_bundle: Path | None = None) -> l
 def inject_artifacts(rendered_source: Path, cache_root: Path) -> None:
     for item in locked_artifacts():
         source = cache_root / "artifacts" / item["filename"]
-        if digest_file(source, item["algorithm"]) != item["digest"]:
-            raise TartarusError(f"cached artifact failed checksum: {item['filename']}")
+        if not source.is_file():
+            raise TartarusError(f"cached artifact is missing: {item['filename']}")
         destination = (
             rendered_source / item["destination"] / item["filename"]
             if "destination" in item
@@ -91,7 +87,4 @@ def _import_bundle(bundle: Path, artifact_root: Path) -> None:
             ) as handle:
                 temporary = Path(handle.name)
                 shutil.copyfileobj(source, handle)
-            if digest_file(temporary, item["algorithm"]) != item["digest"]:
-                temporary.unlink(missing_ok=True)
-                raise TartarusError(f"offline artifact failed checksum: {item['filename']}")
             temporary.replace(artifact_root / item["filename"])

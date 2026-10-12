@@ -9,4 +9,4 @@ python -m pytest
 ruff check controller tests
 ```
 
-Do not add third-party binaries, sample files, evidence, credentials, local paths, operator identities, or deployment addresses. Pin every external input by version and SHA-256 in `versions.lock.yml`.
+Do not add third-party binaries, sample files, evidence, credentials, local paths, operator identities, or deployment addresses. Pin every external input by version and URL in `versions.lock.yml`.

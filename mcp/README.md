@@ -23,7 +23,7 @@ Each successful or failed tool call creates a ToolResult JSON file in:
 <evidence-root>/<case-id>/<run-id>/artifacts/mcp/
 ```
 
-Tartarus hashes the file and adds it to the run manifest before it returns the result to the MCP client.
+Tartarus adds the file path, size, and collection status to the run manifest before it returns the result to the MCP client.
 
 ## Client configuration
 

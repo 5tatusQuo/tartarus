@@ -76,7 +76,7 @@ def test_gdb_execute_preserves_a_multi_command_analysis_sequence() -> None:
         assert value in rendered
 
 
-def test_each_tool_result_is_hashed_and_added_to_the_run_manifest(tmp_path: Path) -> None:
+def test_each_tool_result_is_added_to_the_run_manifest(tmp_path: Path) -> None:
     run_dir = tmp_path / "case-1" / "run-1"
     run_dir.mkdir(parents=True)
     run_file = run_dir / "run.json"
@@ -84,10 +84,9 @@ def test_each_tool_result_is_hashed_and_added_to_the_run_manifest(tmp_path: Path
         "schema_version": "1.0",
         "case_id": "case-1",
         "run_id": "run-1",
-        "sample": {"sha256": "a" * 64},
+        "sample": {"sample_id": "sample-1"},
         "telemetry_profile": "standard",
         "tartarus_release": "test",
-        "deployment_manifest_sha256": "b" * 64,
         "status": "running",
         "started_at": "2026-10-12T00:00:00Z",
         "range_id": "T1",
@@ -111,7 +110,8 @@ def test_each_tool_result_is_hashed_and_added_to_the_run_manifest(tmp_path: Path
     evidence = run_dir / artifact["relative_path"]
     assert evidence.is_file()
     assert result == json.loads(evidence.read_text(encoding="utf-8"))
-    assert len(artifact["sha256"]) == 64
+    assert artifact["size"] == evidence.stat().st_size
+    assert artifact["collection_status"] == "collected"
 
 
 def test_failed_tool_result_is_also_retained(tmp_path: Path) -> None:
@@ -122,10 +122,9 @@ def test_failed_tool_result_is_also_retained(tmp_path: Path) -> None:
         "schema_version": "1.0",
         "case_id": "case-1",
         "run_id": "run-1",
-        "sample": {"sha256": "a" * 64},
+        "sample": {"sample_id": "sample-1"},
         "telemetry_profile": "standard",
         "tartarus_release": "test",
-        "deployment_manifest_sha256": "b" * 64,
         "status": "running",
         "started_at": "2026-10-12T00:00:00Z",
         "range_id": "T1",

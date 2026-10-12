@@ -8,12 +8,8 @@ build_tools:
 images:
   tartarus-debian-12-template:
     url: https://cdimage.debian.org/cdimage/archive/12.15.0/amd64/iso-cd/debian-12.15.0-amd64-netinst.iso
-    algorithm: sha256
-    digest: cd4462c06aa8892e692c0c4b9c17802f38c8ab8690e85cbfb5ccaa5956e9af17
   tartarus-remnux-ubuntu-20.04-template:
     url: https://cdimage.ubuntu.com/ubuntu-legacy-server/releases/20.04/release/ubuntu-20.04.1-legacy-server-amd64.iso
-    algorithm: sha256
-    digest: f11bda2f2caed8f420802b59f382c25160b114ccc665dbac9c5046e7fceaced2
 package_repositories:
   debian: https://deb.debian.org/debian
   ubuntu: http://archive.ubuntu.com/ubuntu
@@ -33,81 +29,43 @@ components:
 artifacts:
   - filename: debian-12.15.0-amd64-netinst.iso
     url: https://cdimage.debian.org/cdimage/archive/12.15.0/amd64/iso-cd/debian-12.15.0-amd64-netinst.iso
-    algorithm: sha256
-    digest: cd4462c06aa8892e692c0c4b9c17802f38c8ab8690e85cbfb5ccaa5956e9af17
     destination: templates/tartarus-debian-12/files
   - filename: ubuntu-20.04.1-legacy-server-amd64.iso
     url: https://cdimage.ubuntu.com/ubuntu-legacy-server/releases/20.04/release/ubuntu-20.04.1-legacy-server-amd64.iso
-    algorithm: sha256
-    digest: f11bda2f2caed8f420802b59f382c25160b114ccc665dbac9c5046e7fceaced2
     destination: templates/tartarus-remnux-ubuntu-20.04/files
   - filename: remnux-cli-1.4.3-linux
     url: https://github.com/REMnux/remnux-cli/releases/download/v1.4.3/remnux-cli-linux
-    algorithm: sha256
-    digest: c8c6d6830cfeb48c9ada2b49c76523c8637d95dc41d00aac345282fb47021f8e
     destination: templates/tartarus-remnux-ubuntu-20.04/files
   - filename: zeek-7.2.2.tar.gz
     url: https://github.com/zeek/zeek/releases/download/v7.2.2/zeek-7.2.2.tar.gz
-    algorithm: sha256
-    digest: 2b1df248f94199a1684e1c460d64cf1c5e49d7471c2b562f942ac5fbe9805893
     destination: templates/tartarus-remnux-ubuntu-20.04/files
   - filename: remnux-salt-states-v2024.44.3.tar.gz
     url: https://github.com/REMnux/salt-states/archive/v2024.44.3.tar.gz
-    algorithm: sha256
-    digest: eaa5a44346030b7a96f8a4531cc21976527fd88483c5a3e11f0670cc87f2db69
     destination: templates/tartarus-remnux-ubuntu-20.04/files
   - filename: remnux-salt-states-v2024.44.3.tar.gz.asc
     url: https://github.com/REMnux/salt-states/releases/download/v2024.44.3/remnux-salt-states-v2024.44.3.tar.gz.asc
-    algorithm: sha256
-    digest: dda936b5ac39f217997dc9b318ec7bab17f7d6f270ca153c5548b6188b399782
-    destination: templates/tartarus-remnux-ubuntu-20.04/files
-  - filename: remnux-salt-states-v2024.44.3.tar.gz.sha256
-    url: https://github.com/REMnux/salt-states/releases/download/v2024.44.3/remnux-salt-states-v2024.44.3.tar.gz.sha256
-    algorithm: sha256
-    digest: 3725ffffe92d1bcaa487f299fed7cf2fdc83d06333699fa13f988ec4a10cf1bc
-    destination: templates/tartarus-remnux-ubuntu-20.04/files
-  - filename: remnux-salt-states-v2024.44.3.tar.gz.sha256.asc
-    url: https://github.com/REMnux/salt-states/releases/download/v2024.44.3/remnux-salt-states-v2024.44.3.tar.gz.sha256.asc
-    algorithm: sha256
-    digest: e38a0b136b2f2e3c2d2256b9d3188991e379c4497e029ad9bf660df2ddfaadf0
     destination: templates/tartarus-remnux-ubuntu-20.04/files
   - filename: elasticsearch-9.5.5-amd64.deb
     url: https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-9.5.5-amd64.deb
-    algorithm: sha512
-    digest: e7b843933fbd6e08e0ac7d6a0c5bf90a27cdbc754187852315a062c6c1a7bf60166786e01c3e74b8f55cdc0170e20f4765448861668da24982aef64ee261a6df
     role: tartarus_elk
   - filename: kibana-9.5.5-amd64.deb
     url: https://artifacts.elastic.co/downloads/kibana/kibana-9.5.5-amd64.deb
-    algorithm: sha512
-    digest: c1ddacf6dead0e062b5e1bb58e707f18558cdd163684b827bc4b81212750a051cf3f29fc4fd5480c682dc99852fcd5bcfd89a7197412b010435382e9bc4af0ab
     role: tartarus_elk
   - filename: elastic-agent-9.5.5-amd64.deb
     url: https://artifacts.elastic.co/downloads/beats/elastic-agent/elastic-agent-9.5.5-amd64.deb
-    algorithm: sha512
-    digest: 381d11606b0534f0eed1df44717b0ab26f91b4009d2e63287eedd6ded127c4739273e920795ae3f5f55dcd795bf0cfbb74f37ce855592cbaec1cb679dad1a5ff
     role: tartarus_agent
   - filename: ghidra_11.4.2_PUBLIC_20250826.zip
     url: https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_11.4.2_build/ghidra_11.4.2_PUBLIC_20250826.zip
-    algorithm: sha256
-    digest: 795a02076af16257bd6f3f4736c4fc152ce9ff1f95df35cd47e2adc086e037a6
     role: tartarus_remnux
   - filename: OpenJDK21U-jdk_x64_linux_hotspot_21.0.12.1_1.tar.gz
     url: https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jdk_x64_linux_hotspot_21.0.12.1_1.tar.gz
-    algorithm: sha256
-    digest: ce79869e1307ed8ee1e2baa86a412b1eb5b75d10a01006d788a6f968bcfaee94
     role: tartarus_remnux
   - filename: r2mcp_1.8.8_amd64.deb
     url: https://github.com/radareorg/radare2-mcp/releases/download/1.8.8/r2mcp_1.8.8_amd64.deb
-    algorithm: sha256
-    digest: 1de404fd88881fd2a543c6c4e552a688f2120966c809da4bbfec9594ec669000
     role: tartarus_remnux
   - filename: radare2_6.1.8_amd64.deb
     url: https://github.com/radareorg/radare2/releases/download/6.1.8/radare2_6.1.8_amd64.deb
-    algorithm: sha256
-    digest: 91e64c672e65521758c0deb0f70d98ac90f0a78eb654d8bd0d894dd5735130e3
     role: tartarus_remnux
   - filename: gdb-15.2.tar.xz
     url: https://ftp.gnu.org/gnu/gdb/gdb-15.2.tar.xz
-    algorithm: sha256
-    digest: 83350ccd35b5b5a0cba6b334c41294ea968158c573940904f00b92f76345314d
     role: tartarus_remnux

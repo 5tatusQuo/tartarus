@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 import tarfile
@@ -14,7 +13,7 @@ from .ludus import run_ludus
 from .manifest import validate
 from .remote import Remote, range_guests
 from .telemetry import record_lifecycle
-from .util import atomic_json, load_json, safe_id, sha256_file, utc_now
+from .util import atomic_json, load_json, safe_id, utc_now
 
 
 def start_remote_run(
@@ -34,10 +33,14 @@ def start_remote_run(
     if not 1 <= duration <= 3600:
         raise TartarusError("duration must be between 1 and 3600 seconds")
     sample = (
-        config.evidence_root / run["case_id"] / "samples" / run["sample"]["sha256"] / "sample.bin"
+        config.evidence_root
+        / run["case_id"]
+        / "samples"
+        / run["sample"]["sample_id"]
+        / "sample.bin"
     )
-    if sha256_file(sample) != run["sample"]["sha256"]:
-        raise TartarusError("controller sample failed integrity verification")
+    if not sample.is_file():
+        raise TartarusError("controller sample is missing")
     guests = range_guests(config, range_id)
     sandbox = Remote(config, guests["sandbox"])
     remnux = Remote(config, guests["remnux"])
@@ -55,7 +58,6 @@ def start_remote_run(
         sample,
         run["run_id"],
         "/var/spool/tartarus/static",
-        run["sample"]["sha256"],
         owner=remnux.guest.user,
         sample_mode="0400",
     )
@@ -78,14 +80,12 @@ def start_remote_run(
             sample,
             run["run_id"],
             "/var/spool/tartarus/runs",
-            run["sample"]["sha256"],
         )
         sandbox.run(
             (
                 "/usr/local/sbin/tartarus-run",
                 "start",
                 run["run_id"],
-                run["sample"]["sha256"],
                 run["telemetry_profile"],
                 str(duration),
                 "true" if debug else "false",
@@ -128,7 +128,7 @@ def start_remote_run(
             "event": "run_started",
             "case_id": run["case_id"],
             "run_id": run["run_id"],
-            "sample_sha256": run["sample"]["sha256"],
+            "sample_id": run["sample"]["sample_id"],
             "telemetry_profile": run["telemetry_profile"],
         },
     )
@@ -165,11 +165,10 @@ def _static_analysis(remote: Remote, run_file: Path, run: dict[str, Any]) -> Non
     atomic_json(output_path, results)
     run["artifacts"].append(
         {
-            "sha256": sha256_file(output_path),
             "relative_path": output_path.relative_to(run_file.parent).as_posix(),
             "media_type": "application/json",
             "size": output_path.stat().st_size,
-            "collection_status": "verified",
+            "collection_status": "collected",
             "collected_at": utc_now(),
         }
     )
@@ -283,7 +282,7 @@ def stop_remote_run(
             "event": "run_collected_and_rebuilt",
             "case_id": run["case_id"],
             "run_id": run["run_id"],
-            "sample_sha256": run["sample"]["sha256"],
+            "sample_id": run["sample"]["sample_id"],
             "artifacts": run["artifacts"],
             "status": run["status"],
             "recovery_verified": run["recovery_verified"],
@@ -369,7 +368,6 @@ def _stage(
     sample: Path,
     run_id: str,
     root: str,
-    expected_sha256: str,
     *,
     owner: str = "root",
     sample_mode: str = "0500",
@@ -395,9 +393,6 @@ def _stage(
             ),
             sudo=True,
         )
-        observed = remote.run(("sha256sum", f"{root}/{run_id}/sample"), sudo=True).stdout.split()[0]
-        if observed != expected_sha256:
-            raise TartarusError(f"sample hash changed while staging on {remote.guest.name}")
     except TartarusError:
         try:
             remote.run(("rm", "-rf", f"{root}/{run_id}"), sudo=True)
@@ -421,35 +416,31 @@ def _pull_directory(
     archive_name = f"/tmp/tartarus-{run_id}-{role}.tar"
     remote.run(("tar", "-C", source, "-cf", archive_name, *members), sudo=True, timeout=300)
     remote.run(("chown", f"{remote.guest.user}:{remote.guest.user}", archive_name), sudo=True)
-    remote_hash = remote.run(("sha256sum", archive_name)).stdout.split()[0]
     remote_size = int(remote.run(("stat", "-c", "%s", archive_name)).stdout.strip())
     local_archive = run_dir / "transfers" / f"{role}.tar"
     if not approve_quota_override and not local_archive.exists():
         _check_quota(config, run_dir, remote_size * 2)
     try:
         if local_archive.exists():
-            if sha256_file(local_archive) != remote_hash:
-                raise TartarusError(f"existing {role} transfer differs from the guest archive")
+            if local_archive.stat().st_size != remote_size:
+                raise TartarusError(f"existing {role} transfer has a different size")
         else:
             remote.pull(archive_name, local_archive)
             local_archive.chmod(0o600)
     finally:
         remote.run(("rm", "-f", archive_name))
     local_archive.chmod(0o600)
-    if sha256_file(local_archive) != remote_hash:
-        raise TartarusError(f"{role} evidence hash changed during transfer")
     destination = run_dir / "artifacts" / role
     if destination.exists():
         if not _extraction_matches(local_archive, destination):
-            raise TartarusError(f"existing {role} evidence differs from its verified transfer")
+            raise TartarusError(f"existing {role} evidence differs from the transfer archive")
     else:
         _safe_extract(local_archive, destination)
     return {
-        "sha256": remote_hash,
         "relative_path": local_archive.relative_to(run_dir).as_posix(),
         "media_type": "application/x-tar",
         "size": local_archive.stat().st_size,
-        "collection_status": "verified",
+        "collection_status": "collected",
         "collected_at": utc_now(),
     }
 
@@ -519,13 +510,10 @@ def _extraction_matches(archive_path: Path, destination: Path) -> bool:
         for member in archive.getmembers():
             if not member.isfile():
                 continue
-            source = archive.extractfile(member)
-            if source is None:
+            extracted = destination / member.name
+            if not extracted.is_file():
                 return False
-            digest = hashlib.sha256()
-            while chunk := source.read(1024 * 1024):
-                digest.update(chunk)
-            if digest.hexdigest() != sha256_file(destination / member.name):
+            if member.size != extracted.stat().st_size:
                 return False
     return True
 

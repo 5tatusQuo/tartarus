@@ -3,7 +3,6 @@ transport: stdio
 sample_content_is_untrusted: true
 evidence:
   retain_each_call: true
-  hash_algorithm: sha256
   path_scope: current_run
 ghidra:
   operations: [import, functions, disassembly, decompile, strings, xrefs, custom_script]

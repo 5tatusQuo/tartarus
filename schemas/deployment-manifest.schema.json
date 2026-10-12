@@ -33,7 +33,7 @@
     "resolved_inputs": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["architecture", "minimum_ludus_version", "build_tools", "images", "package_repositories", "components", "schemas", "policies", "controller_requirements_sha256", "artifacts", "source_tree_sha256", "source_files", "rendered_source_tree_sha256", "blueprint", "blueprint_sha256", "template_build_identifiers"],
+      "required": ["architecture", "minimum_ludus_version", "build_tools", "images", "package_repositories", "components", "schemas", "policies", "controller_requirements", "artifacts", "source_files", "rendered_source_files", "blueprint", "template_build_inputs"],
       "properties": {
         "architecture": {"type": "string", "minLength": 1},
         "minimum_ludus_version": {"type": "string", "minLength": 1},
@@ -44,50 +44,55 @@
           "additionalProperties": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["url", "algorithm", "digest"],
+            "required": ["url"],
             "properties": {
-              "url": {"type": "string", "pattern": "^https://"},
-              "algorithm": {"const": "sha256"},
-              "digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+              "url": {"type": "string", "pattern": "^https://"}
             }
           }
         },
         "package_repositories": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "string", "pattern": "^https?://"}},
         "components": {"type": "object", "additionalProperties": {"type": ["string", "number"]}},
-        "schemas": {"type": "object", "minProperties": 8, "additionalProperties": {"type": "string", "pattern": "^[a-f0-9]{64}$"}},
-        "policies": {"type": "object", "minProperties": 2, "additionalProperties": {"type": "string", "pattern": "^[a-f0-9]{64}$"}},
-        "controller_requirements_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "schemas": {"type": "array", "minItems": 8, "items": {"type": "string", "minLength": 1}},
+        "policies": {"type": "array", "minItems": 2, "items": {"type": "string", "minLength": 1}},
+        "controller_requirements": {"const": "requirements.lock"},
         "artifacts": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["filename", "url", "algorithm", "digest"],
+            "required": ["filename", "url"],
             "properties": {
               "filename": {"type": "string", "minLength": 1},
-              "url": {"type": "string", "pattern": "^https://"},
-              "algorithm": {"enum": ["sha256", "sha512"]},
-              "digest": {"type": "string", "pattern": "^[a-f0-9]{64}([a-f0-9]{64})?$"}
+              "url": {"type": "string", "pattern": "^https://"}
             }
           }
         },
-        "source_tree_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
-        "rendered_source_tree_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
         "source_files": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["path", "sha256"],
+            "required": ["path", "size"],
             "properties": {
               "path": {"type": "string", "pattern": "^(?!/)(?!.*\\.\\./).+$"},
-              "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+              "size": {"type": "integer", "minimum": 0}
+            }
+          }
+        },
+        "rendered_source_files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "size"],
+            "properties": {
+              "path": {"type": "string", "pattern": "^(?!/)(?!.*\\.\\./).+$"},
+              "size": {"type": "integer", "minimum": 0}
             }
           }
         },
         "blueprint": {"type": "string", "minLength": 1},
-        "blueprint_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
-        "template_build_identifiers": {"type": "object", "minProperties": 2, "additionalProperties": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}}
+        "template_build_inputs": {"type": "object", "minProperties": 2, "additionalProperties": {"type": "string", "minLength": 1}}
       }
     }
   },

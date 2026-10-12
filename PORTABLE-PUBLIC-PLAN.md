@@ -122,11 +122,11 @@ Profiles change capacity and retention defaults only. Containment, evidence inte
 ## 5. Reproducible build inputs
 
 - Supply Tartarus-owned Packer definitions for Debian 12 and Ubuntu 20.04/REMnux rather than binding to an operator's similarly named template.
-- Pin ISO URLs and hashes, operating-system packages, Elastic artifacts, integration assets, Python dependencies, Ghidra scripts, and MCP adapters in `versions.lock.yml`.
+- Pin ISO URLs, operating-system packages, Elastic artifacts, integration assets, Python dependencies, Ghidra scripts, and MCP adapters in `versions.lock.yml`.
 - Pin Elastic Stack and Agent 9.5.5, the REMnux Ludus role 1.0.1, and the analysis-engine versions used by the local Tartarus MCP gateway.
-- Record every resolved URL, hash, package version, template build identifier, and Tartarus commit in `DeploymentManifest`.
-- Verify upstream checksums before installation and Tartarus-recorded hashes before reuse from cache.
-- Fail on an operating-system, architecture, kernel, dependency, or checksum mismatch; do not silently upgrade or fall back.
+- Record every resolved URL, package version, template build identifier, and Tartarus commit in `DeploymentManifest`.
+- Check that required inputs are present before installation and reuse from cache.
+- Fail on an operating-system, architecture, kernel, or dependency mismatch; do not silently upgrade or fall back.
 
 Third-party artifacts are downloaded during `prepare` into a user cache excluded from version control. Release archives contain lock metadata and retrieval logic, not redistributed third-party binaries.
 
@@ -138,7 +138,7 @@ tartarus bundle verify
 tartarus prepare --offline <bundle>
 ```
 
-An offline bundle contains verified artifacts and a signed or hash-verified inventory. It never contains credentials, WireGuard material, samples, evidence, or generated deployment secrets.
+An offline bundle contains the required artifacts and a filename-and-size inventory. It never contains credentials, WireGuard material, samples, evidence, or generated deployment secrets.
 
 ## 6. Portable range design
 
@@ -179,18 +179,18 @@ Fleet may be added later as an opt-in feature; it cannot change the canonical ev
 
 Generate installation-specific TLS and API credentials during deployment. Ansible uses `no_log`; secrets are delivered only to their intended services and controller key storage. They never appear in blueprints, Git, exported range configuration, reports, or test fixtures.
 
-Store raw samples, PCAPs, traces, memory images, Ghidra projects, and reports under the controller-selected evidence root. Guests cannot push to or enumerate that store. The controller pulls each artifact and verifies its hash again after transfer.
+Store raw samples, PCAPs, traces, memory images, Ghidra projects, and reports under the controller-selected evidence root. Guests cannot push to or enumerate that store. The controller pulls each artifact and records its path, size, and collection status.
 
 Canonical correlation fields include:
 
 - `case_id`
 - `run_id`
-- `sample.sha256`
+- `sample.sample_id`
 - logical host and observer roles
 - original and normalized timestamps
 - telemetry profile
-- Tartarus release and deployment-manifest hash
-- artifact hash, relative path, media type, size, and collection status
+- Tartarus release
+- artifact relative path, media type, size, and collection status
 - visibility gaps and dropped-event counters
 
 Use timestamp/host/process joins for native kernel or audit events that cannot safely carry a dynamic `run_id`. Preserve original event time and the run interval used for correlation.
@@ -229,20 +229,20 @@ The local MCP gateway exposes analysis-engine operations for the current run. It
 - Ghidra supports its standard analysis operations and agent-supplied Java scripts in the current project.
 - The native radare2 MCP server runs on REMnux and is connected to the agent through the local `tartarus-r2mcp` standard-input and standard-output proxy.
 - GDB supports multi-command debugging of the current short-lived sandbox `gdbserver`, including controlled state changes.
-- Each MCP request and result is retained as a hashed run artifact.
+- Each MCP request and result is retained as a run artifact.
 - MCP uses stdio or stdio over SSH; no listener binds to an analysis-facing interface.
 
 Root execution, external network exceptions, destructive range removal, quota overrides, and changes to containment policy require explicit operator approval. All sample-derived content is treated as untrusted data.
 
 ## 9. Run and recovery contract
 
-1. Create a case and run manifest and hash the sample on the controller.
+1. Create a case, generated sample ID, and run manifest on the controller.
 2. Verify a clean sandbox, final network policy, clock synchronization, ELK/agent health, REMnux services, capture readiness, and evidence capacity.
 3. Perform static analysis from an inert REMnux copy.
 4. Start capture and selected probes before staging the sandbox copy.
-5. Verify the sandbox hash and execute with privilege, duration, CPU, memory, process-count, and output limits.
+5. Execute the staged sandbox sample with privilege, duration, CPU, memory, process-count, and output limits.
 6. Stop the process tree and debugger, finalize telemetry, and record drop/backpressure counters.
-7. Pull and rehash artifacts, ingest metadata, and generate a report plus canonical manifest.
+7. Pull artifacts, record metadata, and generate a report plus canonical manifest.
 8. Destroy and redeploy the sandbox from the pinned template after every untrusted run.
 9. Re-run isolation and telemetry smoke tests before accepting another run.
 
@@ -257,7 +257,7 @@ Snapshot rollback is limited to benign acceptance fixtures. It is not the recove
 - Ludus configuration validation against the minimum and current supported schema
 - `ansible-lint`, YAML lint, syntax, handler, and idempotency tests
 - Packer format and validation without downloading/building images
-- Lockfile and checksum verification
+- Lockfile and required-input validation
 - Secret scanning and checks for real operator names, paths, addresses, tokens, private keys, samples, and evidence
 - Redaction tests covering CLI output, structured logs, errors, reports, and diagnostics
 - Failure tests for unsupported versions, capacity shortfall, address conflict, offline dependency gaps, interrupted deployment, and stale state

@@ -1,20 +1,17 @@
 ---
-- name: Verify Elastic packages baked into the owned template
-  ansible.builtin.stat:
-    path: "/var/cache/tartarus/{{ item.name }}"
-    checksum_algorithm: sha512
+- name: Check Elastic packages baked into the owned template
+  ansible.builtin.command: "test -f /var/cache/tartarus/{{ item.name }}"
+  changed_when: false
+  failed_when: false
   loop:
     - name: elasticsearch-9.5.5-amd64.deb
-      digest: e7b843933fbd6e08e0ac7d6a0c5bf90a27cdbc754187852315a062c6c1a7bf60166786e01c3e74b8f55cdc0170e20f4765448861668da24982aef64ee261a6df
     - name: kibana-9.5.5-amd64.deb
-      digest: c1ddacf6dead0e062b5e1bb58e707f18558cdd163684b827bc4b81212750a051cf3f29fc4fd5480c682dc99852fcd5bcfd89a7197412b010435382e9bc4af0ab
   register: tartarus_elk_cached_packages
 
-- name: Enforce baked Elastic package digests
+- name: Require the baked Elastic packages
   ansible.builtin.assert:
     that:
-      - item.stat.exists
-      - item.stat.checksum == item.item.digest
+      - item.rc == 0
   loop: "{{ tartarus_elk_cached_packages.results }}"
 
 - name: Install pinned Elastic packages

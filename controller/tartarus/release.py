@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -10,7 +9,7 @@ import yaml
 from .artifacts import locked_artifacts
 from .errors import TartarusError
 from .manifest import project_root, validate
-from .util import atomic_json, load_json, sha256_file, utc_now
+from .util import atomic_json, load_json, utc_now
 
 
 def source_revision(allow_development: bool = False) -> str:
@@ -39,7 +38,7 @@ def write_prepare_manifest(
     profile: str,
     revision: str,
     rendered_source: Path,
-    base_source_files: list[dict[str, str]],
+    base_source_files: list[dict[str, str | int]],
 ) -> dict[str, Any]:
     lock = yaml.safe_load((rendered_source / "versions.lock.yml").read_text(encoding="utf-8"))
     rendered_source_files = source_inventory(rendered_source)
@@ -55,33 +54,25 @@ def write_prepare_manifest(
             "images": lock["images"],
             "package_repositories": lock["package_repositories"],
             "components": lock["components"],
-            "schemas": {
-                path.name: sha256_file(path)
-                for path in sorted((project_root() / "schemas").glob("*.json"))
-            },
-            "policies": {
-                path.name: sha256_file(path)
-                for path in sorted((project_root() / "policies").glob("*.yml"))
-            },
-            "controller_requirements_sha256": sha256_file(project_root() / "requirements.lock"),
+            "schemas": [
+                path.name for path in sorted((project_root() / "schemas").glob("*.json"))
+            ],
+            "policies": [
+                path.name for path in sorted((project_root() / "policies").glob("*.yml"))
+            ],
+            "controller_requirements": "requirements.lock",
             "artifacts": [
                 {
                     "filename": item["filename"],
                     "url": item["url"],
-                    "algorithm": item["algorithm"],
-                    "digest": item["digest"],
                 }
                 for item in locked_artifacts()
             ],
-            "source_tree_sha256": source_inventory_hash(base_source_files),
             "source_files": base_source_files,
-            "rendered_source_tree_sha256": source_inventory_hash(rendered_source_files),
+            "rendered_source_files": rendered_source_files,
             "blueprint": f"tartarus/tartarus-{profile}",
-            "blueprint_sha256": sha256_file(
-                rendered_source / "blueprints" / f"tartarus-{profile}" / "range-config.yml"
-            ),
-            "template_build_identifiers": {
-                path.parent.name: f"sha256:{sha256_file(path)}"
+            "template_build_inputs": {
+                path.parent.name: path.name
                 for path in sorted((rendered_source / "templates").rglob("*.pkr.hcl"))
             },
         },
@@ -91,22 +82,12 @@ def write_prepare_manifest(
     return manifest
 
 
-def source_inventory(root: Path) -> list[dict[str, str]]:
+def source_inventory(root: Path) -> list[dict[str, str | int]]:
     return [
-        {"path": path.relative_to(root).as_posix(), "sha256": sha256_file(path)}
+        {"path": path.relative_to(root).as_posix(), "size": path.stat().st_size}
         for path in sorted(root.rglob("*"))
         if path.is_file()
     ]
-
-
-def source_inventory_hash(source_files: list[dict[str, str]]) -> str:
-    aggregate = hashlib.sha256()
-    for item in source_files:
-        aggregate.update(item["path"].encode())
-        aggregate.update(b"\0")
-        aggregate.update(item["sha256"].encode())
-        aggregate.update(b"\n")
-    return aggregate.hexdigest()
 
 
 def finalize_deployment_manifest(

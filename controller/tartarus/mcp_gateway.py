@@ -13,7 +13,7 @@ from .errors import TartarusError
 from .manifest import validate
 from .remote import Remote, range_guests
 from .telemetry import telemetry_health, telemetry_search
-from .util import atomic_json, load_json, safe_id, sha256_file, utc_now
+from .util import atomic_json, load_json, safe_id, utc_now
 
 FUNCTION_RE = re.compile(r"^[A-Za-z_.$?][A-Za-z0-9_.$?@-]{0,255}$")
 SCRIPT_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,127}\.java$")
@@ -307,7 +307,7 @@ def _capabilities(remote: Remote) -> dict[str, Any]:
         "radare2": "native r2mcp server through tartarus-r2mcp",
         "gdb": "current-run remote gdbserver command adapter",
         "telemetry": "run-scoped Elastic search",
-        "evidence": "hashed per-call ToolResult artifacts",
+        "evidence": "per-call ToolResult artifacts",
     }
     return result
 
@@ -349,11 +349,10 @@ def _record_tool_result(
     validate("tool-result", result)
     atomic_json(artifact_path, result)
     record = {
-        "sha256": sha256_file(artifact_path),
         "relative_path": relative_path,
         "media_type": "application/json",
         "size": artifact_path.stat().st_size,
-        "collection_status": "verified",
+        "collection_status": "collected",
         "collected_at": utc_now(),
     }
     latest_run = load_json(run_file)

@@ -19,7 +19,7 @@ from .errors import TartarusError
 from .ludus import authenticated_user, run_ludus
 from .manifest import project_root, validate
 from .proxmox import inspect_proxmox
-from .util import digest_file, utc_now
+from .util import utc_now
 
 PROFILE_MEMORY = {"compact": 16, "standard": 32, "large": 64}
 PROFILE_LOGICAL_CPUS = {"compact": 16, "standard": 16, "large": 20}
@@ -300,8 +300,8 @@ def _existing_parent(path: Path) -> Path:
 
 def _dependency_status(cache_root: Path, item: dict[str, Any]) -> dict[str, Any]:
     cached = cache_root / "artifacts" / item["filename"]
-    if cached.is_file() and digest_file(cached, item["algorithm"]) == item["digest"]:
-        return {"filename": item["filename"], "available": True, "source": "verified_cache"}
+    if cached.is_file():
+        return {"filename": item["filename"], "available": True, "source": "cache"}
     request = urllib.request.Request(item["url"], method="HEAD")
     try:
         with urllib.request.urlopen(request, timeout=10) as response:

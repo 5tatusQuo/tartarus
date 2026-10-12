@@ -46,7 +46,7 @@ The compact profile requires these minimum host resources:
 3. Install the locked dependencies.
 
    ```bash
-   python -m pip install --require-hashes -r requirements.lock
+   python -m pip install -r requirements.lock
    ```
 
 4. Install the controller from this repository.
@@ -172,13 +172,15 @@ It does not change the repository.
    tartarus sample stage --case-id demo ./benign-elf
    ```
 
+   Record the `sample_id` from the command output.
+
 3. Start the analysis run.
 
    ```bash
    tartarus run start \
      --range-id <range-id> \
      --case-id demo \
-     --sha256 <sha256> \
+     --sample-id <sample-id> \
      --telemetry-profile standard \
      --yes
    ```
@@ -203,7 +205,7 @@ It does not change the repository.
 
 The stop operation completes the packet capture and bounded traces.
 It transfers the evidence to controller-owned storage.
-It verifies each transferred file with a SHA-256 digest.
+It checks that each transferred file arrived with the expected size.
 
 The operation then destroys and redeploys the sandbox.
 It runs the live verification suite on the replacement sandbox.
@@ -214,7 +216,7 @@ The controller does not give a guest write access to the evidence root.
 ## Examine the evidence
 
 Each completed run contains a `run.json` manifest and a `report.md` report.
-The manifest records artifact paths, sizes, SHA-256 digests, and collection status.
+The manifest records artifact paths, sizes, and collection status.
 It also records visibility gaps and the sandbox recovery result.
 
 Create a separate report if necessary:
@@ -251,7 +253,7 @@ The `tartarus-r2mcp` proxy connects the agent to the native radare2 MCP server o
 
 The [analysis-agent instructions](AGENTS.md) define the required MCP workflow and the evidence completion gate.
 The gateways support native radare2 MCP tools, GDB command sequences, agent-supplied Ghidra scripts, run-scoped telemetry searches, and capability discovery.
-They record each MCP call as a hashed run artifact before they return the result.
+They record each MCP call as a run artifact before they return the result.
 See [MCP client configuration](mcp/README.md#client-configuration) for both local server commands.
 
 ## Build and release controls
@@ -259,12 +261,12 @@ See [MCP client configuration](mcp/README.md#client-configuration) for both loca
 By default, `prepare` accepts only a clean immutable commit or tag.
 Use `--development` only for local source tests.
 
-Tartarus downloads locked third-party packages into the user cache.
-It verifies the packages before it adds them to the temporary Ludus source.
+Tartarus downloads version-pinned third-party packages into the user cache.
+It checks that the packages are present before it adds them to the temporary Ludus source.
 It does not add these packages to a release archive.
 
 The project locks `badsectorlabs.ludus_remnux` version 1.0.1 for source compatibility.
-The owned image build uses the checksum-locked REMnux 1.4.3 installer.
+The owned image build uses the version-pinned REMnux 1.4.3 installer.
 It uses REMnux distribution `v2024.44.3`.
 
 ## Verify portability

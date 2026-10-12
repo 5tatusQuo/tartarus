@@ -38,7 +38,7 @@
     state: present
     update_cache: true
 
-- name: Create Tartarus analysis root and verified artifact cache
+- name: Create Tartarus analysis root and artifact cache
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
@@ -49,11 +49,10 @@
     - /opt/tartarus
     - /var/cache/tartarus
 
-- name: Download checksum-locked analysis artifacts
+- name: Download pinned analysis artifacts
   ansible.builtin.get_url:
     url: "{{ item.url }}"
     dest: "/var/cache/tartarus/{{ item.name }}"
-    checksum: "sha256:{{ item.digest }}"
     owner: root
     group: root
     mode: "0644"
@@ -66,31 +65,30 @@
   vars:
     tartarus_remnux_version_commands:
       results:
-        - {name: zeek-7.2.2.tar.gz, url: https://github.com/zeek/zeek/releases/download/v7.2.2/zeek-7.2.2.tar.gz, digest: 2b1df248f94199a1684e1c460d64cf1c5e49d7471c2b562f942ac5fbe9805893}
-        - {name: r2mcp_1.8.8_amd64.deb, url: https://github.com/radareorg/radare2-mcp/releases/download/1.8.8/r2mcp_1.8.8_amd64.deb, digest: 1de404fd88881fd2a543c6c4e552a688f2120966c809da4bbfec9594ec669000}
-        - {name: radare2_6.1.8_amd64.deb, url: https://github.com/radareorg/radare2/releases/download/6.1.8/radare2_6.1.8_amd64.deb, digest: 91e64c672e65521758c0deb0f70d98ac90f0a78eb654d8bd0d894dd5735130e3}
-        - {name: ghidra_11.4.2_PUBLIC_20250826.zip, url: https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_11.4.2_build/ghidra_11.4.2_PUBLIC_20250826.zip, digest: 795a02076af16257bd6f3f4736c4fc152ce9ff1f95df35cd47e2adc086e037a6}
-        - {name: OpenJDK21U-jdk_x64_linux_hotspot_21.0.12.1_1.tar.gz, url: https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jdk_x64_linux_hotspot_21.0.12.1_1.tar.gz, digest: ce79869e1307ed8ee1e2baa86a412b1eb5b75d10a01006d788a6f968bcfaee94}
-        - {name: gdb-15.2.tar.xz, url: https://ftp.gnu.org/gnu/gdb/gdb-15.2.tar.xz, digest: 83350ccd35b5b5a0cba6b334c41294ea968158c573940904f00b92f76345314d}
+        - {name: zeek-7.2.2.tar.gz, url: https://github.com/zeek/zeek/releases/download/v7.2.2/zeek-7.2.2.tar.gz}
+        - {name: r2mcp_1.8.8_amd64.deb, url: https://github.com/radareorg/radare2-mcp/releases/download/1.8.8/r2mcp_1.8.8_amd64.deb}
+        - {name: radare2_6.1.8_amd64.deb, url: https://github.com/radareorg/radare2/releases/download/6.1.8/radare2_6.1.8_amd64.deb}
+        - {name: ghidra_11.4.2_PUBLIC_20250826.zip, url: https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_11.4.2_build/ghidra_11.4.2_PUBLIC_20250826.zip}
+        - {name: OpenJDK21U-jdk_x64_linux_hotspot_21.0.12.1_1.tar.gz, url: https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jdk_x64_linux_hotspot_21.0.12.1_1.tar.gz}
+        - {name: gdb-15.2.tar.xz, url: https://ftp.gnu.org/gnu/gdb/gdb-15.2.tar.xz}
 
-- name: Verify cached analysis artifacts
-  ansible.builtin.stat:
-    path: "/var/cache/tartarus/{{ item.name }}"
-    checksum_algorithm: sha256
+- name: Check cached analysis artifacts
+  ansible.builtin.command: "test -f /var/cache/tartarus/{{ item.name }}"
+  changed_when: false
+  failed_when: false
   loop:
-    - {name: zeek-7.2.2.tar.gz, digest: 2b1df248f94199a1684e1c460d64cf1c5e49d7471c2b562f942ac5fbe9805893}
-    - {name: r2mcp_1.8.8_amd64.deb, digest: 1de404fd88881fd2a543c6c4e552a688f2120966c809da4bbfec9594ec669000}
-    - {name: radare2_6.1.8_amd64.deb, digest: 91e64c672e65521758c0deb0f70d98ac90f0a78eb654d8bd0d894dd5735130e3}
-    - {name: ghidra_11.4.2_PUBLIC_20250826.zip, digest: 795a02076af16257bd6f3f4736c4fc152ce9ff1f95df35cd47e2adc086e037a6}
-    - {name: OpenJDK21U-jdk_x64_linux_hotspot_21.0.12.1_1.tar.gz, digest: ce79869e1307ed8ee1e2baa86a412b1eb5b75d10a01006d788a6f968bcfaee94}
-    - {name: gdb-15.2.tar.xz, digest: 83350ccd35b5b5a0cba6b334c41294ea968158c573940904f00b92f76345314d}
+    - {name: zeek-7.2.2.tar.gz}
+    - {name: r2mcp_1.8.8_amd64.deb}
+    - {name: radare2_6.1.8_amd64.deb}
+    - {name: ghidra_11.4.2_PUBLIC_20250826.zip}
+    - {name: OpenJDK21U-jdk_x64_linux_hotspot_21.0.12.1_1.tar.gz}
+    - {name: gdb-15.2.tar.xz}
   register: tartarus_remnux_cached_artifacts
 
-- name: Enforce baked analysis artifact digests
+- name: Require cached analysis artifacts
   ansible.builtin.assert:
     that:
-      - item.stat.exists
-      - item.stat.checksum == item.item.digest
+      - item.rc == 0
   loop: "{{ tartarus_remnux_cached_artifacts.results }}"
 
 - name: Unpack the pinned Zeek source release

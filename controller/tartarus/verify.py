@@ -265,9 +265,8 @@ def _verify_bounded_runner(sandbox: Remote) -> bool:
     run_dir = f"/var/spool/tartarus/runs/{run_id}"
     sandbox.run(("install", "-d", "-m", "0700", run_dir), sudo=True)
     sandbox.run(("cp", "/bin/true", f"{run_dir}/sample"), sudo=True)
-    digest = sandbox.run(("sha256sum", f"{run_dir}/sample"), sudo=True).stdout.split()[0]
     sandbox.run(
-        ("/usr/local/sbin/tartarus-run", "start", run_id, digest, "standard", "30"), sudo=True
+        ("/usr/local/sbin/tartarus-run", "start", run_id, "standard", "30"), sudo=True
     )
     time.sleep(1)
     sandbox.run(("/usr/local/sbin/tartarus-run", "stop", run_id), sudo=True)

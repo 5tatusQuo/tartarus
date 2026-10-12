@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
@@ -26,24 +25,6 @@ def safe_id(value: str, label: str) -> str:
 
 def new_id(prefix: str) -> str:
     return f"{prefix}-{datetime.now(UTC):%Y%m%dT%H%M%SZ}-{secrets.token_hex(3)}"
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def digest_file(path: Path, algorithm: str) -> str:
-    if algorithm not in {"sha256", "sha512"}:
-        raise TartarusError(f"unsupported digest algorithm: {algorithm}")
-    digest = hashlib.new(algorithm)
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def atomic_json(path: Path, value: Any, mode: int = 0o600) -> None:

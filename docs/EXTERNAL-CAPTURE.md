@@ -11,6 +11,6 @@ change outside Tartarus, and revert it after the capture window. Do not pass
 Proxmox credentials into a guest or add a host command to a Tartarus role.
 
 Before using externally captured data as evidence, record its interface and
-time interval, copy it into the run with `tartarus run collect`, and retain the
-controller-computed hash. External capture is never required for the compact
+time interval, copy it into the run with `tartarus run collect`, and retain its
+artifact record. External capture is never required for the compact
 profile and is outside automated deployment and recovery.

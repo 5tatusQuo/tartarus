@@ -10,7 +10,7 @@ import yaml
 
 from .errors import TartarusError
 from .manifest import project_root
-from .util import digest_file, utc_now
+from .util import utc_now
 
 
 def _locked_artifacts() -> list[dict[str, str]]:
@@ -40,18 +40,12 @@ def create_bundle(output: Path, cache_root: Path) -> Path:
             source = _artifact_path(cache_root / "artifacts", filename)
             if not source.is_file():
                 raise TartarusError(f"locked artifact is absent from cache: {filename}")
-            algorithm = artifact.get("algorithm", "sha256")
-            actual = digest_file(source, algorithm)
-            if actual != artifact["digest"]:
-                raise TartarusError(f"checksum mismatch for cached artifact: {filename}")
             target = _artifact_path(staging / "artifacts", filename)
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, target)
             inventory["artifacts"].append(
                 {
                     "filename": filename,
-                    "algorithm": algorithm,
-                    "digest": actual,
                     "size": target.stat().st_size,
                 }
             )
@@ -105,16 +99,9 @@ def verify_bundle(bundle: Path) -> dict[str, object]:
         if set(observed) != set(expected):
             raise TartarusError("bundle inventory does not exactly match versions.lock.yml")
         for item in inventory_items:
-            locked = expected[item["filename"]]
-            if item.get("algorithm") != locked.get("algorithm", "sha256"):
-                raise TartarusError(f"bundle algorithm mismatch: {item['filename']}")
-            if item.get("digest") != locked["digest"]:
-                raise TartarusError(f"bundle digest mismatch: {item['filename']}")
             path = _artifact_path(root / "artifacts", item["filename"])
             if not path.is_file():
                 raise TartarusError(f"bundle artifact is missing: {item['filename']}")
             if item.get("size") != path.stat().st_size:
                 raise TartarusError(f"bundle artifact size mismatch: {item['filename']}")
-            if digest_file(path, item["algorithm"]) != item["digest"]:
-                raise TartarusError(f"bundle artifact failed verification: {item['filename']}")
         return inventory

@@ -14,14 +14,15 @@ def comparable(path: Path) -> dict[str, Any]:
         "schema_version": manifest["schema_version"],
         "tartarus_release": manifest["tartarus_release"],
         "profile": manifest["profile"],
-        "source_tree_sha256": inputs["source_tree_sha256"],
+        "source_files": inputs["source_files"],
+        "rendered_source_files": inputs["rendered_source_files"],
         "components": inputs["components"],
         "schemas": inputs["schemas"],
         "policies": inputs["policies"],
-        "controller_requirements_sha256": inputs["controller_requirements_sha256"],
+        "controller_requirements": inputs["controller_requirements"],
         "artifacts": inputs["artifacts"],
         "images": inputs["images"],
-        "template_build_identifiers": inputs["template_build_identifiers"],
+        "template_build_inputs": inputs["template_build_inputs"],
         "guest_builds": {
             role: {"kernel": guest["kernel"], "packages": guest["packages"]}
             for role, guest in guests.items()

@@ -37,7 +37,7 @@ from .release import (
 )
 from .remote import Remote, range_guests
 from .telemetry import record_lifecycle, telemetry_health, telemetry_search
-from .util import atomic_json, load_json, safe_id, sha256_file, utc_now
+from .util import atomic_json, load_json, safe_id, utc_now
 from .verify import verify_range
 
 
@@ -633,7 +633,7 @@ def cmd_run_start(args: argparse.Namespace) -> None:
             "operation": "execute ELF in disposable sandbox",
             "case_id": args.case_id,
             "run_id": args.run_id or "generated",
-            "sample_sha256": args.sha256,
+            "sample_id": args.sample_id,
             "telemetry_profile": args.telemetry_profile,
             "duration_seconds": args.duration,
             "debug_session": args.debug,
@@ -643,10 +643,9 @@ def cmd_run_start(args: argparse.Namespace) -> None:
     run = create_run(
         config.evidence_root,
         args.case_id,
-        args.sha256,
+        args.sample_id,
         args.telemetry_profile,
         deployment["tartarus_release"],
-        sha256_file(deployment_manifest),
         args.run_id,
     )
     run_file = _run_file(config, args.case_id, run["run_id"])
@@ -714,7 +713,7 @@ def cmd_run_stop(args: argparse.Namespace) -> None:
             "event": "run_report_generated",
             "case_id": completed["case_id"],
             "run_id": completed["run_id"],
-            "sample_sha256": completed["sample"]["sha256"],
+            "sample_id": completed["sample"]["sample_id"],
             "artifacts": completed["artifacts"],
             "visibility_gaps": completed["visibility_gaps"],
         },
@@ -726,7 +725,7 @@ def cmd_bundle(args: argparse.Namespace) -> None:
     config = load_config()
     if args.bundle_action == "create":
         announce_local_change(
-            config, "create verified offline bundle", {"output": str(Path(args.output))}
+            config, "create offline bundle", {"output": str(Path(args.output))}
         )
         print(create_bundle(Path(args.output), config.cache_root))
     else:
@@ -809,24 +808,17 @@ def _generate_report(run_file: Path, output: Path) -> None:
         raise TartarusError(f"refusing to overwrite report: {output}")
     artifact_lines: list[str] = []
     for item in run["artifacts"]:
-        artifact_path = run_file.parent / item["relative_path"]
-        verified = artifact_path.is_file() and sha256_file(artifact_path) == item["sha256"]
-        if not verified:
-            raise TartarusError(
-                f"artifact failed report-time verification: {item['relative_path']}"
-            )
         artifact_lines.append(
-            f"- `{item['relative_path']}` — `{item['sha256']}` ({item['size']} bytes, verified)"
+            f"- `{item['relative_path']}` ({item['size']} bytes, {item['collection_status']})"
         )
     lines = [
         f"# Tartarus run {run['run_id']}",
         "",
         f"- Case: `{run['case_id']}`",
-        f"- Sample SHA-256: `{run['sample']['sha256']}`",
+        f"- Sample: `{run['sample']['sample_id']}`",
         f"- Status: `{run['status']}`",
         f"- Telemetry profile: `{run['telemetry_profile']}`",
         f"- Tartarus release: `{run['tartarus_release']}`",
-        f"- Deployment manifest: `{run['deployment_manifest_sha256']}`",
         f"- Recovery verified: `{run.get('recovery_verified', False)}`",
         "",
         "## Artifacts",
@@ -842,11 +834,10 @@ def _generate_report(run_file: Path, output: Path) -> None:
     output.chmod(0o600)
     if output.is_relative_to(run_file.parent):
         record = {
-            "sha256": sha256_file(output),
             "relative_path": output.relative_to(run_file.parent).as_posix(),
             "media_type": "text/markdown",
             "size": output.stat().st_size,
-            "collection_status": "verified",
+            "collection_status": "collected",
             "collected_at": utc_now(),
         }
         run["artifacts"].append(record)
@@ -926,7 +917,7 @@ def parser() -> argparse.ArgumentParser:
     run_actions = run.add_subparsers(dest="run_action", required=True)
     start = run_actions.add_parser("start")
     start.add_argument("--case-id", required=True)
-    start.add_argument("--sha256", required=True)
+    start.add_argument("--sample-id", required=True)
     start.add_argument("--run-id")
     start.add_argument("--range-id", required=True)
     start.add_argument("--duration", type=int, default=300)

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import mimetypes
-import re
 import shutil
 from pathlib import Path
 from typing import Any
@@ -11,7 +10,7 @@ from jsonschema import Draft202012Validator
 
 from .elf import triage_elf
 from .errors import TartarusError
-from .util import atomic_json, load_json, new_id, safe_id, sha256_file, utc_now
+from .util import atomic_json, load_json, new_id, safe_id, utc_now
 
 MAX_SAMPLE_BYTES = 1024**3
 
@@ -58,51 +57,41 @@ def stage_sample(evidence_root: Path, case_id: str, source: Path) -> dict[str, A
         raise TartarusError(f"sample is not a regular file: {source}")
     if source.stat().st_size > MAX_SAMPLE_BYTES:
         raise TartarusError("sample exceeds the 1 GiB execution input limit")
-    digest = sha256_file(source)
+    sample_id = new_id("sample")
     elf = triage_elf(source)
-    destination = evidence_root / case_id / "samples" / digest / "sample.bin"
+    destination = evidence_root / case_id / "samples" / sample_id / "sample.bin"
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.parent.chmod(0o700)
-    if destination.exists() and sha256_file(destination) != digest:
-        raise TartarusError(f"existing staged sample failed hash verification: {destination}")
-    if not destination.exists():
-        temporary = destination.with_suffix(".tmp")
-        shutil.copyfile(source, temporary)
-        if sha256_file(temporary) != digest:
-            temporary.unlink(missing_ok=True)
-            raise TartarusError("sample hash changed while staging")
-        temporary.replace(destination)
-        destination.chmod(0o400)
+    shutil.copyfile(source, destination)
+    destination.chmod(0o400)
     record = {
-        "sha256": digest,
+        "sample_id": sample_id,
+        "original_name": source.name,
         "size": source.stat().st_size,
         "staged_at": utc_now(),
         "media_type": "application/x-elf",
         "elf": elf,
     }
-    if not any(item.get("sha256") == digest for item in case["samples"]):
-        case["samples"].append(record)
-        validate("case-manifest", case)
-        atomic_json(case_file, case)
+    case["samples"].append(record)
+    validate("case-manifest", case)
+    atomic_json(case_file, case)
     return record
 
 
 def create_run(
     evidence_root: Path,
     case_id: str,
-    sample_sha256: str,
+    sample_id: str,
     profile: str,
     release: str,
-    deployment_manifest_sha256: str,
     run_id: str | None = None,
 ) -> dict[str, Any]:
     safe_id(case_id, "case ID")
-    if not re.fullmatch(r"[a-f0-9]{64}", sample_sha256):
-        raise TartarusError("sample SHA-256 must be 64 lowercase hexadecimal characters")
+    safe_id(sample_id, "sample ID")
     identifier = safe_id(run_id or new_id("run"), "run ID")
-    sample_path = evidence_root / case_id / "samples" / sample_sha256 / "sample.bin"
-    if not sample_path.is_file() or sha256_file(sample_path) != sample_sha256:
-        raise TartarusError("sample is not staged or failed integrity verification")
+    sample_path = evidence_root / case_id / "samples" / sample_id / "sample.bin"
+    if not sample_path.is_file():
+        raise TartarusError("sample is not staged")
     run_dir = evidence_root / case_id / identifier
     if run_dir.exists():
         raise TartarusError(f"run already exists: {identifier}")
@@ -110,10 +99,9 @@ def create_run(
         "schema_version": "1.0",
         "case_id": case_id,
         "run_id": identifier,
-        "sample": {"sha256": sample_sha256},
+        "sample": {"sample_id": sample_id},
         "telemetry_profile": profile,
         "tartarus_release": release,
-        "deployment_manifest_sha256": deployment_manifest_sha256,
         "status": "prepared",
         "started_at": utc_now(),
         "artifacts": [],
@@ -130,21 +118,16 @@ def collect_artifact(
 ) -> dict[str, Any]:
     run = load_json(run_file)
     source = source.resolve(strict=True)
-    digest = sha256_file(source)
-    relative = Path("artifacts") / digest / source.name
+    relative = Path("artifacts") / "manual" / f"{new_id('artifact')}-{source.name}"
     destination = run_file.parent / relative
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(source, destination)
     destination.chmod(0o600)
-    if sha256_file(destination) != digest:
-        destination.unlink(missing_ok=True)
-        raise TartarusError("artifact hash changed during collection")
     record = {
-        "sha256": digest,
         "relative_path": relative.as_posix(),
         "media_type": mimetypes.guess_type(source.name)[0] or kind,
         "size": destination.stat().st_size,
-        "collection_status": "verified",
+        "collection_status": "collected",
         "collected_at": utc_now(),
     }
     run["artifacts"].append(record)

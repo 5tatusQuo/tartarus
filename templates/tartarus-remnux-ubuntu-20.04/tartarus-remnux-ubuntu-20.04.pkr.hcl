@@ -15,10 +15,6 @@ variable "iso_url" {
   type    = string
   default = ""
 }
-variable "iso_checksum" {
-  type    = string
-  default = "sha256:f11bda2f2caed8f420802b59f382c25160b114ccc665dbac9c5046e7fceaced2"
-}
 variable "proxmox_url" { type = string }
 variable "proxmox_host" { type = string }
 variable "proxmox_username" { type = string }
@@ -60,7 +56,6 @@ source "proxmox-iso" "tartarus_remnux" {
     model  = "virtio"
   }
   iso_url                = var.iso_url != "" ? var.iso_url : "https://cdimage.ubuntu.com/ubuntu-legacy-server/releases/20.04/release/ubuntu-20.04.1-legacy-server-amd64.iso"
-  iso_checksum           = var.iso_checksum
   iso_storage_pool       = var.iso_storage_pool
   unmount_iso            = true
   http_directory         = "http"

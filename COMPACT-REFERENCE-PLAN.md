@@ -95,14 +95,14 @@ Generated TLS keys, Elastic API keys, SSH material, and passwords are installati
 - `systemd-journald` records kernel, boot, service, authentication, and collector failures with bounded retention.
 - Standalone Elastic Agent ships audit logs, journal/system logs, and 30-second host metrics. Elastic Defend and Auditd Manager are not enabled.
 - REMnux records INetSim requests and capture status/drop counters.
-- The run controller emits lifecycle records for start, stop, profile, sample hash, host role, and evidence export.
+- The run controller emits lifecycle records for start, stop, profile, sample ID, host role, and evidence export.
 
 ### On-demand collection
 
 - `strace -f` with duration and output limits
 - Targeted `bpftrace` programs validated for the pinned kernel
 - `/proc`, `ss`, `lsof`, process-tree, and memory-map snapshots
-- Before/after filesystem hashing for selected paths
+- Before/after filesystem snapshots for selected paths
 - Bounded `dumpcap` PCAP capture
 - GDB client on REMnux connected to a short-lived sandbox `gdbserver`
 
@@ -114,18 +114,18 @@ Raw PCAP, traces, samples, memory captures, Ghidra projects, and reports remain 
 <evidence-root>/<case_id>/<run_id>/
 ```
 
-Guests receive no write access to controller storage. Each artifact is hashed before and after transfer. The default quota is 20 GiB per run; insufficient guest spool or controller capacity blocks execution unless the operator approves an explicit override.
+Guests receive no write access to controller storage. Each transferred artifact is checked for presence and expected size. The default quota is 20 GiB per run; insufficient guest spool or controller capacity blocks execution unless the operator approves an explicit override.
 
-Elasticsearch stores normalized events, artifact metadata, hashes, run boundaries, and visibility gaps. High-volume telemetry defaults to 14-day retention and run/manifest metadata to 30 days, with values configurable per installation.
+Elasticsearch stores normalized events, artifact metadata, run boundaries, and visibility gaps. High-volume telemetry defaults to 14-day retention and run/manifest metadata to 30 days, with values configurable per installation.
 
 ## 6. Reverse-engineering and AI interfaces
 
-An inert copy of each ELF is staged on REMnux and hash-verified. It is never executed there.
+An inert copy of each ELF is staged on REMnux. It is never executed there.
 
 - The headless Ghidra adapter exposes import, functions, disassembly, decompilation, strings, cross-references, and agent-supplied Java analysis scripts for the current sample and project.
 - The native radare2 MCP server exposes its analysis, function, string, import, export, section, symbol, cross-reference, decompilation, and disassembly tools through the local `tartarus-r2mcp` proxy.
 - The GDB adapter accepts multi-command analysis sequences for the current sandbox `gdbserver`. It supports breakpoints, watchpoints, stepping, threads, registers, stacks, memory, signals, and controlled state changes.
-- Every MCP tool result is stored as a hashed artifact in the current run manifest.
+- Every MCP tool result is stored as an artifact in the current run manifest.
 - MCP services use local stdio or stdio over SSH. No MCP listener binds to a malware-facing guest interface.
 
 The controller exposes lifecycle commands separately from the analysis MCP tools:
@@ -146,13 +146,13 @@ Sample strings, debugger output, disassembly, packet contents, and log messages 
 
 ## 7. Per-run lifecycle
 
-1. Create `case_id` and `run_id`; record the sample SHA-256, profile, image/build manifest, and tool versions.
+1. Create `case_id`, `run_id`, and `sample_id`; record the profile, image/build manifest, and tool versions.
 2. Verify the sandbox is newly deployed, clocks are synchronized, forbidden routes are blocked, fake services and ELK are healthy, capture is ready, and evidence capacity is available.
 3. Perform static ELF triage and optional Ghidra/radare2 analysis from an inert REMnux copy.
 4. Start PCAP and requested probes before transferring the sample to a unique sandbox run directory.
-5. Verify the sandbox copy's SHA-256 and execute it as the unprivileged `tartarus-runner` inside systemd/cgroup resource limits.
+5. Execute the staged sandbox copy as the unprivileged `tartarus-runner` inside systemd/cgroup resource limits.
 6. Stop the complete process tree, close `gdbserver`, finalize traces and PCAP, and record audit/packet loss and backpressure.
-7. Pull artifacts to the controller, rehash them, ingest searchable metadata, and generate the run report and canonical JSON manifest.
+7. Pull artifacts to the controller, record their metadata, and generate the run report and canonical JSON manifest.
 8. Destroy and redeploy the sandbox from the pinned template.
 9. Repeat isolation and telemetry smoke tests before marking the range ready.
 
@@ -192,7 +192,7 @@ Sample strings, debugger output, disassembly, packet contents, and log messages 
 - Complete a benign run and evidence export.
 - Destroy/redeploy the sandbox.
 - Prove no sample, process, run credential, or altered configuration survives.
-- Re-run containment and telemetry checks and validate every controller-side artifact hash.
+- Re-run containment and telemetry checks and confirm every required controller-side artifact is present.
 
 ## 9. Deferred capabilities
 
