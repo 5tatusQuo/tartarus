@@ -2,9 +2,54 @@
 
 ## Purpose
 
-Create an evidence-backed threat report from one completed Tartarus run.
-The report is an analytical product, not a reformatted run manifest.
+Create an evidence-backed malware and threat-analysis report from one completed Tartarus run.
+Write for incident responders, threat analysts, security engineers, and technical leaders.
+The report is an analytical product, not a run manifest or a decompilation dump.
 The structured handoff that you return is the source for the final Markdown report.
+
+## Report model
+
+Write the main report in the style of a high-quality public threat-research report. Lead with the
+analyst assessment. Explain what the sample is, what it does, how it operates, what an attacker
+could do with its capabilities, what the sandbox observed, and what defenders can detect.
+
+- Use a descriptive title that names the sample or software and states the main finding. Do not
+  mention Tartarus, the run, the case, the report process, or the analysis state in the title.
+- Give a short executive summary that a reader can understand without reverse-engineering skills.
+- Give three to seven key findings. Put the most important finding first.
+- Explain the sample profile and the identified software role.
+- Describe capabilities by behavior, not by function address or tool output.
+- For each capability, distinguish code capability from observed execution.
+- Explain the execution flow in chronological order and in plain language.
+- Explain the security relevance of dual-use or benign functionality. Do not equate capability
+  with malicious use.
+- Put detailed function records, completion gates, and the whole-program function map in the
+  technical annex. Link to that annex from the main report.
+- Do not put raw decompilation, full disassembly, tool transcripts, or a whole-program table in the
+  main report.
+- Do not describe the analysis process before you explain the result.
+- Do not discuss the context inventory or internal reporting controls in reader-facing prose.
+
+## ASD-STE100 language
+
+Use ASD-STE100 Simplified Technical English for all reader-facing text.
+
+- Use short sentences. Use no more than 25 words in a descriptive sentence when practical.
+- Put one main statement in each sentence.
+- Use the active voice when the actor is known.
+- Use the same term for the same item or action. Do not use synonyms for variety.
+- Use approved common words when possible. Treat necessary cybersecurity terms as technical nouns
+  or technical verbs.
+- Define each abbreviation at its first use. Do not define common file-format names such as ELF.
+- Do not use contractions, idioms, rhetorical questions, humor, or promotional language.
+- Do not use vague references such as "this", "that", "it", or "they" when the noun is not clear.
+- Do not use long noun clusters. Rewrite them as short clauses.
+- Use positive statements when they are clearer than negative statements.
+- Use lists for multiple conditions, capabilities, indicators, and actions.
+- Keep each paragraph on one topic. Keep paragraphs short.
+- Do not use an em dash or a semicolon in prose.
+- Do not claim formal ASD-STE100 certification. The report must follow its controlled-language
+  principles and local quality checks.
 
 ## Evidence boundary
 
@@ -29,10 +74,10 @@ The structured handoff that you return is the source for the final Markdown repo
 - Separate observed, inferred, and unresolved claims.
 - Corroborate material behavior with independent evidence types when possible.
 - Give each finding a confidence level and evidence references.
-- Include every behaviorally relevant function in the function index. Link its complete retained decompilation and disassembly, or state the exact gap.
-- Include the retained whole-program function map in the final report. Every discovered program
-  function and import thunk must appear with its address, size, relationships, classification,
-  referenced imports or strings, and coverage rationale.
+- Include every behaviorally relevant function in the technical function index. Link its complete
+  retained decompilation and disassembly, or state the exact gap.
+- Keep the retained whole-program function map in the technical annex. Every discovered program
+  function and import thunk must remain available there.
 - Extract IOCs only when they are sample-derived and supported. Keep laboratory infrastructure and benign observables separate.
 - Map MITRE ATT&CK techniques only when the evidence satisfies the technique behavior.
 - Make no APT or malware-family attribution without distinctive corroborating evidence.
@@ -41,6 +86,7 @@ The structured handoff that you return is the source for the final Markdown repo
 
 ## Completion
 
+Return schema version `2.0`.
 Return `analysis_complete` only when every completion-gate item passes.
 Otherwise return `analysis_incomplete` and enumerate the missing work as visibility gaps.
 A clear incomplete report is correct; an invented complete report is not.

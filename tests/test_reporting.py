@@ -23,8 +23,44 @@ def _handoff(reference: str = "evidence.txt") -> dict:
         "evidence_refs": [reference],
     }
     return {
-        "schema_version": "1.0",
+        "schema_version": "2.0",
         "analysis_state": "analysis_incomplete",
+        "report_title": "Analysis of a benign ELF fixture",
+        "threat_classification": "benign",
+        "confidence": "high",
+        "reader_summary": [claim],
+        "key_findings": [claim, claim, claim],
+        "sample_profile": {
+            "file_type": "ELF executable",
+            "architecture": "x86-64",
+            "platform": "Linux",
+            "linkage": "Dynamic",
+            "protections": ["NX"],
+            "identified_role": "Test fixture",
+            "evidence_refs": [reference],
+        },
+        "capabilities": [
+            {
+                "name": "Fixture output",
+                "status": "observed",
+                "description": "The fixture writes a test message.",
+                "security_relevance": "The output does not create a security risk.",
+                "confidence": "high",
+                "relevant_functions": ["entry"],
+                "evidence_refs": [reference],
+            }
+        ],
+        "execution_flow": [
+            {
+                "order": 1,
+                "stage": "Start",
+                "description": "The fixture starts and writes a test message.",
+                "classification": "observed",
+                "evidence_refs": [reference],
+            }
+        ],
+        "risk_assessment": claim,
+        "recommended_actions": ["No response action is necessary."],
         "scope": claim,
         "executive_assessment": claim,
         "methodology": [
@@ -143,13 +179,20 @@ def test_codex_reporting_pipeline_creates_and_records_a_threat_report(tmp_path: 
     report = output.read_text(encoding="utf-8")
     assert result["analysis_state"] == "analysis_incomplete"
     assert result["manifest_updated"] is True
-    assert "## Executive assessment" in report
-    assert "## Function analysis" in report
-    assert "No supported IOC." in report
-    assert "No supported mapping." in report
-    assert "No supported Sigma rule." in report
+    assert "## Executive summary" in report
+    assert "## What the binary does" in report
+    assert "## How execution proceeds" in report
+    assert "The evidence does not support an indicator of compromise." in report
+    assert "The evidence does not support a MITRE ATT&CK mapping." in report
+    assert "The collected log fields do not support a useful Sigma rule." in report
+    assert "## Complete function map" not in report
+    assert "Evidence: [E1]" in report
+    assert "## Evidence references" in report
+    annex = output.with_name("report-technical-annex.md")
+    assert "## Function analysis records" in annex.read_text(encoding="utf-8")
     artifacts = load_json(run_file)["artifacts"]
     assert any(item["relative_path"] == "report.md" for item in artifacts)
+    assert any(item["relative_path"] == "report-technical-annex.md" for item in artifacts)
     assert any(item["relative_path"].endswith("analysis-handoff.json") for item in artifacts)
 
 
@@ -192,11 +235,13 @@ def test_report_embeds_every_function_from_retained_whole_program_map(tmp_path: 
     )
 
     report = output.read_text(encoding="utf-8")
-    assert "## Complete function map" in report
-    assert "maps all **2** functions" in report
-    assert "| 00100000 | 12 | entry |" in report
-    assert "| 00100020 | 8 | worker |" in report
-    assert "safe &#124; text" in report
+    annex = output.with_name("report-technical-annex.md").read_text(encoding="utf-8")
+    assert "## Complete function map" not in report
+    assert "## Complete function map" in annex
+    assert "maps all **2** functions" in annex
+    assert "| 00100000 | 12 | entry |" in annex
+    assert "| 00100020 | 8 | worker |" in annex
+    assert "safe &#124; text" in annex
 
 
 def test_reporting_rejects_a_missing_evidence_reference(tmp_path: Path) -> None:
@@ -221,3 +266,16 @@ def test_reporting_repairs_a_rejected_handoff(tmp_path: Path) -> None:
 
     assert result["attempts"] == 2
     assert result["analysis_state"] == "analysis_incomplete"
+
+
+def test_reporting_rejects_prose_that_breaks_simplified_english(tmp_path: Path) -> None:
+    run_file = _completed_run(tmp_path)
+    handoff = _handoff()
+    handoff["reader_summary"][0]["claim"] = "The fixture isn't malicious."
+
+    with pytest.raises(TartarusError, match="uses a contraction"):
+        generate_agent_report(
+            run_file,
+            run_file.parent / "report.md",
+            codex_executable=str(_fake_codex(tmp_path, handoff)),
+        )

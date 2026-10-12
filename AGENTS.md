@@ -117,7 +117,7 @@ Before reporting, produce an analysis handoff with these sections:
 3. Evidence timeline
 4. Static findings
 5. Function-analysis index with links to complete decompilation and disassembly artifacts
-   and a whole-program table that accounts for every discovered function
+   and a whole-program table that accounts for every discovered function in the technical annex
 6. Dynamic findings
 7. Network behavior
 8. Persistence, privilege, credential, and defense-evasion behavior

@@ -234,12 +234,15 @@ The controller does not give a guest write access to the evidence root.
 
 ## Examine the evidence
 
-Each completed run contains a `run.json` manifest and an AI-generated `report.md` report.
+Each completed run contains a `run.json` manifest, an AI-generated `report.md` threat report, and
+a `report-technical-annex.md` file.
 The manifest records artifact paths, sizes, and collection status.
 It also records visibility gaps and the sandbox recovery result.
-The report embeds the complete Ghidra function map. Each discovered program function and import
-thunk includes its address, size, callers, callees, imports, referenced strings, classification,
-and coverage rationale. Complete decompilation and disassembly exports remain linked evidence.
+The main report uses ASD-STE100 language. It explains the assessment, capabilities, execution
+flow, observed behavior, security relevance, indicators, and detection guidance for human readers.
+The technical annex contains the complete Ghidra function map. Each program function and import
+thunk includes its address, size, callers, callees, imports, strings, classification, and coverage
+rationale. Complete decompilation and disassembly exports remain linked evidence.
 
 The reporting agent follows [the reporting instructions](reporting/AGENTS.md).
 It examines retained MCP, static, debugger, telemetry, trace, packet, and run evidence.

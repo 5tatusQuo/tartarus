@@ -7,6 +7,16 @@
   "required": [
     "schema_version",
     "analysis_state",
+    "report_title",
+    "threat_classification",
+    "confidence",
+    "reader_summary",
+    "key_findings",
+    "sample_profile",
+    "capabilities",
+    "execution_flow",
+    "risk_assessment",
+    "recommended_actions",
     "scope",
     "executive_assessment",
     "methodology",
@@ -54,8 +64,65 @@
     }
   },
   "properties": {
-    "schema_version": {"type": "string", "const": "1.0"},
+    "schema_version": {"type": "string", "const": "2.0"},
     "analysis_state": {"enum": ["analysis_complete", "analysis_incomplete"]},
+    "report_title": {"type": "string", "minLength": 1},
+    "threat_classification": {
+      "enum": ["malicious", "likely_malicious", "suspicious", "benign", "unknown"]
+    },
+    "confidence": {"enum": ["high", "medium", "low"]},
+    "reader_summary": {"type": "array", "minItems": 1, "maxItems": 4, "items": {"$ref": "#/$defs/claim"}},
+    "key_findings": {"type": "array", "minItems": 3, "maxItems": 7, "items": {"$ref": "#/$defs/claim"}},
+    "sample_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file_type", "architecture", "platform", "linkage", "protections", "identified_role", "evidence_refs"],
+      "properties": {
+        "file_type": {"type": "string", "minLength": 1},
+        "architecture": {"type": "string", "minLength": 1},
+        "platform": {"type": "string", "minLength": 1},
+        "linkage": {"type": "string", "minLength": 1},
+        "protections": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "identified_role": {"type": "string", "minLength": 1},
+        "evidence_refs": {"$ref": "#/$defs/evidence_refs"}
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "status", "description", "security_relevance", "confidence", "relevant_functions", "evidence_refs"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "status": {"enum": ["observed", "static_capability", "not_observed", "unresolved"]},
+          "description": {"type": "string", "minLength": 1},
+          "security_relevance": {"type": "string", "minLength": 1},
+          "confidence": {"enum": ["high", "medium", "low"]},
+          "relevant_functions": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "evidence_refs": {"$ref": "#/$defs/evidence_refs"}
+        }
+      }
+    },
+    "execution_flow": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["order", "stage", "description", "classification", "evidence_refs"],
+        "properties": {
+          "order": {"type": "integer", "minimum": 1},
+          "stage": {"type": "string", "minLength": 1},
+          "description": {"type": "string", "minLength": 1},
+          "classification": {"enum": ["observed", "inferred", "unresolved"]},
+          "evidence_refs": {"$ref": "#/$defs/evidence_refs"}
+        }
+      }
+    },
+    "risk_assessment": {"$ref": "#/$defs/claim"},
+    "recommended_actions": {"type": "array", "items": {"type": "string", "minLength": 1}},
     "scope": {"$ref": "#/$defs/claim"},
     "executive_assessment": {"$ref": "#/$defs/claim"},
     "methodology": {

@@ -20,6 +20,12 @@ from .util import atomic_json, load_json, new_id, utc_now
 REPORT_TIMEOUT_SECONDS = 3600
 REPORT_ATTEMPTS = 3
 OPAQUE_CONTENT_IDENTIFIER = re.compile(r"(?<![A-Fa-f0-9])[A-Fa-f0-9]{64,128}(?![A-Fa-f0-9])")
+CONTRACTION = re.compile(
+    r"\b(?:aren't|can't|couldn't|didn't|doesn't|don't|hadn't|hasn't|haven't|isn't|"
+    r"shouldn't|wasn't|weren't|won't|wouldn't|it's|that's|there's|they're|we're|"
+    r"we've|you're|you've)\b",
+    re.IGNORECASE,
+)
 WHOLE_PROGRAM_MAP_SCRIPT = "TartarusFinalWholeProgramMap.java"
 DEEP_FUNCTION_EXPORT_SCRIPT = "TartarusFinalRelevantDeepExport.java"
 
@@ -105,12 +111,16 @@ def generate_agent_report(
         if path.is_file():
             path.chmod(0o600)
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(_render_report(run, handoff, run_dir, output), encoding="utf-8")
-    output.chmod(0o600)
-    recorded = _record_outputs(run_file, session_dir, output)
+    annex = _technical_annex_path(output)
+    output.write_text(_render_report(run, handoff, run_dir, output, annex), encoding="utf-8")
+    annex.write_text(_render_technical_annex(run, handoff, run_dir, annex), encoding="utf-8")
+    for path in (output, annex):
+        path.chmod(0o600)
+    recorded = _record_outputs(run_file, session_dir, (output, annex))
     return {
         "analysis_state": handoff["analysis_state"],
         "report": str(output),
+        "technical_annex": str(annex),
         "handoff": str(handoff_path),
         "session": session_dir.name,
         "attempts": attempts_used,
@@ -145,12 +155,18 @@ def render_retained_report(
     if output.exists() and not replace:
         raise TartarusError(f"refusing to overwrite report: {output}")
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(_render_report(run, handoff, run_dir, output), encoding="utf-8")
-    output.chmod(0o600)
-    recorded = _record_outputs(run_file, handoff_path.parent, output)
+    annex = _technical_annex_path(output)
+    if annex.exists() and not replace:
+        raise TartarusError(f"refusing to overwrite technical annex: {annex}")
+    output.write_text(_render_report(run, handoff, run_dir, output, annex), encoding="utf-8")
+    annex.write_text(_render_technical_annex(run, handoff, run_dir, annex), encoding="utf-8")
+    for path in (output, annex):
+        path.chmod(0o600)
+    recorded = _record_outputs(run_file, handoff_path.parent, (output, annex))
     return {
         "analysis_state": handoff["analysis_state"],
         "report": str(output),
+        "technical_annex": str(annex),
         "handoff": str(handoff_path),
         "manifest_updated": recorded,
     }
@@ -230,6 +246,7 @@ def _report_context(run_file: Path, run: dict[str, Any], session_dir: Path) -> d
         relative = path.relative_to(run_dir).as_posix()
         if (
             relative in {"run.json", "report.md"}
+            or (path.parent == run_dir and path.suffix == ".md")
             or relative.startswith(
                 (
                     "artifacts/reporting/",
@@ -275,6 +292,14 @@ evidence, behaviorally relevant functions, IOCs, MITRE ATT&CK, attribution limit
 Sigma detections. Use empty arrays and explicit unsupported assessments when evidence does not
 support a category. Cite every material claim with existing run-relative evidence paths. Mark the
 analysis incomplete whenever the completion gate is not fully supported.
+
+Return schema version 2.0. Write the reader-facing fields in ASD-STE100 Simplified Technical
+English. Create a human threat-analysis narrative, not a decompilation report. Explain what the
+sample is, what capabilities it contains, what behavior the sandbox observed, and why the findings
+matter. Distinguish static capability from observed execution. Keep function-level detail in the
+structured function index so the renderer can place it in a separate technical annex.
+Use a title that names the sample or software and states the main finding. Do not mention Tartarus,
+the run, the case, reporting controls, or the analysis process in the title or reader summary.
 """
 
 
@@ -294,6 +319,7 @@ def _validate_handoff(
     run_dir: Path, handoff: dict[str, Any], permitted_evidence: set[str]
 ) -> None:
     _reject_opaque_content_identifiers(handoff)
+    _validate_simplified_english(handoff)
     for reference in _evidence_references(handoff):
         if reference not in permitted_evidence:
             raise TartarusError(f"analysis handoff cites evidence outside its context: {reference}")
@@ -316,6 +342,78 @@ def _validate_handoff(
             raise TartarusError(
                 "analysis handoff discusses an out-of-scope artifact collection mechanism"
             )
+
+
+def _validate_simplified_english(handoff: dict[str, Any]) -> None:
+    failures: list[str] = []
+    if re.search(r"\b(?:Tartarus|run|case)\b", handoff["report_title"], re.IGNORECASE):
+        failures.append("report_title contains internal workflow language")
+    values: list[tuple[str, str]] = []
+
+    def add_claims(name: str, claims: list[dict[str, Any]]) -> None:
+        values.extend((f"{name}[{index}]", item["claim"]) for index, item in enumerate(claims))
+
+    add_claims("reader_summary", handoff["reader_summary"])
+    add_claims("key_findings", handoff["key_findings"])
+    add_claims("dynamic_findings", handoff["dynamic_findings"])
+    add_claims("network_behavior", handoff["network_behavior"])
+    add_claims("security_behaviors", handoff["security_behaviors"])
+    add_claims("alternative_explanations", handoff["alternative_explanations"])
+    for name in ("scope", "executive_assessment", "risk_assessment", "attribution"):
+        values.append((name, handoff[name]["claim"]))
+    for index, item in enumerate(handoff["capabilities"]):
+        values.extend(
+            [
+                (f"capabilities[{index}].description", item["description"]),
+                (f"capabilities[{index}].security_relevance", item["security_relevance"]),
+            ]
+        )
+    values.extend(
+        (f"execution_flow[{index}].description", item["description"])
+        for index, item in enumerate(handoff["execution_flow"])
+    )
+    values.extend(
+        (f"timeline[{index}].activity", item["activity"])
+        for index, item in enumerate(handoff["timeline"])
+    )
+    values.extend(
+        (f"attack_mappings[{index}].basis", item["basis"])
+        for index, item in enumerate(handoff["attack_mappings"])
+    )
+    values.extend(
+        (f"iocs[{index}].context", item["context"])
+        for index, item in enumerate(handoff["iocs"])
+    )
+    values.extend(
+        (f"detections[{index}].rationale", item["rationale"])
+        for index, item in enumerate(handoff["detections"])
+    )
+    values.extend(
+        (f"recommended_actions[{index}]", value)
+        for index, value in enumerate(handoff["recommended_actions"])
+    )
+    values.extend(
+        (f"visibility_gaps[{index}]", value)
+        for index, value in enumerate(handoff["visibility_gaps"])
+    )
+    for name, value in values:
+        if re.search(
+            r"\b(?:context inventory|authoritative context|reporting control)\b",
+            value,
+            re.IGNORECASE,
+        ):
+            failures.append(f"{name} contains internal workflow language")
+        if ";" in value or "—" in value:
+            failures.append(f"{name} uses prohibited punctuation")
+        if CONTRACTION.search(value):
+            failures.append(f"{name} uses a contraction")
+        for sentence in re.split(r"(?<=[.!?])\s+", value):
+            words = re.findall(r"\b[\w'-]+\b", sentence)
+            if len(words) > 25:
+                failures.append(f"{name} has a sentence with more than 25 words")
+                break
+    if failures:
+        raise TartarusError("ASD-STE100 validation failures: " + "; ".join(failures))
 
 
 def _reject_opaque_content_identifiers(value: Any) -> None:
@@ -363,14 +461,17 @@ def _validate_sigma(value: str) -> None:
         raise TartarusError("agent-generated Sigma rule has no detection condition")
 
 
-def _record_outputs(run_file: Path, session_dir: Path, output: Path) -> bool:
+def _record_outputs(
+    run_file: Path, session_dir: Path, outputs: Iterable[Path]
+) -> bool:
     run = load_json(run_file)
     if "sample_id" not in run.get("sample", {}):
         return False
     run_dir = run_file.parent
     paths = [path for path in sorted(session_dir.iterdir()) if path.is_file()]
-    if output.resolve().is_relative_to(run_dir):
-        paths.append(output.resolve())
+    for output in outputs:
+        if output.resolve().is_relative_to(run_dir):
+            paths.append(output.resolve())
     existing = {item["relative_path"]: item for item in run["artifacts"]}
     for path in paths:
         relative = path.relative_to(run_dir).as_posix()
@@ -401,44 +502,227 @@ def _media_type(path: Path) -> str:
     }.get(path.suffix, "application/octet-stream")
 
 
+def _technical_annex_path(output: Path) -> Path:
+    return output.with_name(f"{output.stem}-technical-annex{output.suffix}")
+
+
 def _render_report(
-    run: dict[str, Any], handoff: dict[str, Any], run_dir: Path, output: Path
+    run: dict[str, Any],
+    handoff: dict[str, Any],
+    run_dir: Path,
+    output: Path,
+    annex: Path,
 ) -> str:
+    classification = handoff["threat_classification"].replace("_", " ").title()
     lines = [
-        f"# Tartarus threat analysis: {run['run_id']}",
+        f"# {handoff['report_title']}",
         "",
-        f"- Case: `{run['case_id']}`",
-        f"- Analysis state: `{handoff['analysis_state']}`",
-        "- Generated by: `Codex`",
+        f"**Assessment:** {classification}  ",
+        f"**Confidence:** {handoff['confidence'].title()}  ",
+        f"**Sample:** `{run['sample']['sample_id']}`  ",
+        f"**Case:** `{run['case_id']}`  ",
+        "**Language:** ASD-STE100 Simplified Technical English  ",
+        "**Prepared by:** Tartarus analysis agent",
         "",
-        "## Executive assessment",
-        "",
-        _claim_text(handoff["executive_assessment"], run_dir, output),
-        "",
-        "## Scope and sample identity",
-        "",
-        _claim_text(handoff["scope"], run_dir, output),
-        "",
-        "## Analysis methodology",
+        "## Executive summary",
         "",
     ]
-    for item in handoff["methodology"]:
+    for item in handoff["reader_summary"]:
+        lines.extend([_reader_claim(item, run_dir, output), ""])
+    lines.extend(["## Key findings", ""])
+    for item in handoff["key_findings"]:
+        lines.append(f"- {_reader_claim(item, run_dir, output)}")
+    lines.extend(
+        [
+            "",
+            "## What we analyzed",
+            "",
+            _reader_claim(handoff["scope"], run_dir, output),
+            "",
+            "| Property | Result |",
+            "|---|---|",
+            f"| File type | {_markdown_cell(handoff['sample_profile']['file_type'])} |",
+            f"| Architecture | {_markdown_cell(handoff['sample_profile']['architecture'])} |",
+            f"| Platform | {_markdown_cell(handoff['sample_profile']['platform'])} |",
+            f"| Linkage | {_markdown_cell(handoff['sample_profile']['linkage'])} |",
+            f"| Protections | {_markdown_cell(', '.join(handoff['sample_profile']['protections']) or 'None identified')} |",
+            f"| Identified role | {_markdown_cell(handoff['sample_profile']['identified_role'])} |",
+            "",
+            _references(handoff["sample_profile"]["evidence_refs"], run_dir, output),
+            "",
+            "## What the binary does",
+            "",
+        ]
+    )
+    status_labels = {
+        "observed": "Observed during execution",
+        "static_capability": "Present in the code",
+        "not_observed": "Not observed during execution",
+        "unresolved": "Unresolved",
+    }
+    for capability in handoff["capabilities"]:
+        lines.extend(
+            [
+                f"### {capability['name']}",
+                "",
+                f"**Status:** {status_labels[capability['status']]}  ",
+                f"**Confidence:** {capability['confidence'].title()}",
+                "",
+                capability["description"],
+                "",
+                f"**Security relevance:** {capability['security_relevance']}",
+                "",
+                _references(capability["evidence_refs"], run_dir, output),
+                "",
+            ]
+        )
+    lines.extend(["## How execution proceeds", ""])
+    for item in sorted(handoff["execution_flow"], key=lambda value: value["order"]):
         lines.append(
-            f"- `{item['state']}` — {item['summary']} "
+            f"{item['order']}. **{item['stage']}:** {item['description']} "
             f"{_references(item['evidence_refs'], run_dir, output)}"
         )
-    lines.extend(["", "## Evidence timeline", ""])
+    lines.extend(["", "## What we observed during execution", ""])
+    _reader_claim_list(lines, handoff["dynamic_findings"], run_dir, output)
     if handoff["timeline"]:
+        lines.extend(["", "### Execution timeline", ""])
         for item in handoff["timeline"]:
             lines.append(
-                f"- **{item['time']}** — {item['activity']} "
-                f"(`{item['classification']}`) "
+                f"- **{item['time']}:** {item['activity']} "
+                f"{_references(item['evidence_refs'], run_dir, output)}"
+            )
+    lines.extend(["", "## Security assessment", ""])
+    lines.extend([_reader_claim(handoff["risk_assessment"], run_dir, output), ""])
+    lines.extend(["### Network behavior", ""])
+    _reader_claim_list(lines, handoff["network_behavior"], run_dir, output)
+    lines.extend(["", "### Persistence, privilege, and credential behavior", ""])
+    _reader_claim_list(lines, handoff["security_behaviors"], run_dir, output)
+    lines.extend(["", "### MITRE ATT&CK", ""])
+    if handoff["attack_mappings"]:
+        for item in handoff["attack_mappings"]:
+            lines.append(
+                f"- **{item['technique_id']} {item['technique_name']}:** {item['basis']} "
                 f"{_references(item['evidence_refs'], run_dir, output)}"
             )
     else:
-        lines.append("- No defensible event timeline was recoverable.")
-    _claim_section(lines, "Static findings", handoff["static_findings"], run_dir, output)
-    lines.extend(["", "## Function analysis", ""])
+        lines.append("The evidence does not support a MITRE ATT&CK mapping.")
+    lines.extend(["", "## Indicators and detection", "", "### Indicators of compromise", ""])
+    if handoff["iocs"]:
+        lines.extend(["| Type | Value | Context | Confidence |", "|---|---|---|---|"])
+        for item in handoff["iocs"]:
+            lines.append(
+                "| "
+                + " | ".join(
+                    _markdown_cell(value)
+                    for value in (
+                        item["type"],
+                        item["value"],
+                        item["context"],
+                        item["confidence"].title(),
+                    )
+                )
+                + " |"
+            )
+    else:
+        lines.append("The evidence does not support an indicator of compromise.")
+    lines.extend(["", "### Detection guidance", ""])
+    if handoff["detections"]:
+        for item in handoff["detections"]:
+            lines.extend(
+                [
+                    f"#### {item['title']}",
+                    "",
+                    f"{item['rationale']} {_references(item['evidence_refs'], run_dir, output)}",
+                    "",
+                    f"Required log sources: {', '.join(item['log_sources'])}.",
+                    "",
+                    "````yaml",
+                    item["rule_yaml"].rstrip(),
+                    "````",
+                    "",
+                ]
+            )
+    else:
+        lines.append("The collected log fields do not support a useful Sigma rule.")
+    lines.extend(["", "## Analyst assessment", ""])
+    lines.extend([_reader_claim(handoff["executive_assessment"], run_dir, output), ""])
+    lines.extend([_reader_claim(handoff["attribution"], run_dir, output), ""])
+    if handoff["alternative_explanations"]:
+        lines.extend(["### Alternative explanations", ""])
+        _reader_claim_list(lines, handoff["alternative_explanations"], run_dir, output)
+    lines.extend(["", "## Recommended actions", ""])
+    if handoff["recommended_actions"]:
+        lines.extend(f"- {item}" for item in handoff["recommended_actions"])
+    else:
+        lines.append("No response action is necessary for this sample.")
+    lines.extend(["", "## Analysis limits", ""])
+    if handoff["visibility_gaps"]:
+        lines.extend(f"- {item}" for item in handoff["visibility_gaps"])
+    else:
+        lines.append("The analysis did not identify a material visibility gap.")
+    annex_target = os.path.relpath(annex, output.parent)
+    lines.extend(
+        [
+            "",
+            "## Technical material",
+            "",
+            (
+                "The technical annex contains the function records, complete function map, "
+                "method, evidence index, and completion checks."
+            ),
+            "",
+            f"Open the [technical annex](<{annex_target}>).",
+        ]
+    )
+    return _compact_evidence_links("\n".join(lines).rstrip() + "\n")
+
+
+def _compact_evidence_links(report: str) -> str:
+    pattern = re.compile(r"\[`([^`]+)`\]\(<([^>]+)>\)")
+    references: dict[str, tuple[int, str]] = {}
+
+    def replace(match: re.Match[str]) -> str:
+        reference, target = match.groups()
+        if reference not in references:
+            references[reference] = (len(references) + 1, target)
+        number, retained_target = references[reference]
+        return f"[E{number}](<{retained_target}>)"
+
+    compact = pattern.sub(replace, report).rstrip()
+    if not references:
+        return compact + "\n"
+    lines = [compact, "", "## Evidence references", ""]
+    for reference, (number, target) in references.items():
+        lines.append(f"- **E{number}:** [`{reference}`](<{target}>)")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _reader_claim(item: dict[str, Any], run_dir: Path, output: Path) -> str:
+    return f"{item['claim']} {_references(item['evidence_refs'], run_dir, output)}".strip()
+
+
+def _reader_claim_list(
+    lines: list[str], claims: list[dict[str, Any]], run_dir: Path, output: Path
+) -> None:
+    if claims:
+        lines.extend(f"- {_reader_claim(item, run_dir, output)}" for item in claims)
+    else:
+        lines.append("The analysis did not identify applicable behavior.")
+
+
+def _render_technical_annex(
+    run: dict[str, Any], handoff: dict[str, Any], run_dir: Path, output: Path
+) -> str:
+    lines = [
+        f"# Technical annex: {handoff['report_title']}",
+        "",
+        f"- Run: `{run['run_id']}`",
+        f"- Sample: `{run['sample']['sample_id']}`",
+        f"- Analysis state: `{handoff['analysis_state']}`",
+        "",
+        "## Function analysis records",
+        "",
+    ]
     if handoff["function_analysis"]:
         for item in handoff["function_analysis"]:
             label = item["name"]
@@ -448,104 +732,35 @@ def _render_report(
                 [
                     f"### `{label}` at `{item['address']}`",
                     "",
-                    (
-                        f"{item['behavior']} Confidence: `{item['confidence']}`. "
-                        f"{_references(item['evidence_refs'], run_dir, output)}"
-                    ),
+                    f"{item['behavior']} {_references(item['evidence_refs'], run_dir, output)}",
                     "",
+                    f"- Confidence: {item['confidence'].title()}",
                     f"- Complete decompilation: {_artifact_link(item['decompilation_artifact'], run_dir, output)}",
                     f"- Complete disassembly: {_artifact_link(item['disassembly_artifact'], run_dir, output)}",
-                    f"- Gap: {item['gap'] or 'None recorded'}",
+                    f"- Analysis gap: {item['gap'] or 'None'}",
                     "",
                 ]
             )
     else:
-        lines.append("No behaviorally relevant function analysis was retained.")
+        lines.append("No behaviorally relevant function record was retained.")
     _complete_function_map(lines, run_dir, output)
-    _claim_section(lines, "Dynamic findings", handoff["dynamic_findings"], run_dir, output)
-    _claim_section(lines, "Network behavior", handoff["network_behavior"], run_dir, output)
-    _claim_section(
-        lines,
-        "Persistence, privilege, credential, and defense-evasion behavior",
-        handoff["security_behaviors"],
-        run_dir,
-        output,
-    )
-    lines.extend(["", "## Indicators of compromise", ""])
-    if handoff["iocs"]:
-        for item in handoff["iocs"]:
-            lines.append(
-                f"- `{item['type']}` `{item['value']}` — {item['context']} "
-                f"(confidence: `{item['confidence']}`) "
-                f"{_references(item['evidence_refs'], run_dir, output)}"
-            )
-    else:
-        lines.append("No supported IOC.")
-    _claim_section(
-        lines, "Benign observables", handoff["benign_observables"], run_dir, output
-    )
-    lines.extend(["", "## MITRE ATT&CK mappings", ""])
-    if handoff["attack_mappings"]:
-        for item in handoff["attack_mappings"]:
-            lines.append(
-                f"- `{item['technique_id']}` {item['technique_name']} — {item['basis']} "
-                f"(confidence: `{item['confidence']}`) "
-                f"{_references(item['evidence_refs'], run_dir, output)}"
-            )
-    else:
-        lines.append("No supported mapping.")
-    lines.extend(["", "## Detection opportunities", ""])
-    if handoff["detections"]:
-        for item in handoff["detections"]:
-            lines.extend(
-                [
-                    f"### {item['title']}",
-                    "",
-                    f"{item['rationale']} {_references(item['evidence_refs'], run_dir, output)}",
-                    "",
-                    f"Log sources: {', '.join(item['log_sources'])}",
-                    "",
-                    "False positives: "
-                    + ("; ".join(item["false_positives"]) or "None identified"),
-                    "",
-                    "````yaml",
-                    item["rule_yaml"].rstrip(),
-                    "````",
-                    "",
-                ]
-            )
-    else:
-        lines.append("No supported Sigma rule.")
-    lines.extend(
-        [
-            "",
-            "## Attribution assessment",
-            "",
-            _claim_text(handoff["attribution"], run_dir, output),
-        ]
-    )
-    _claim_section(
-        lines,
-        "Alternative explanations",
-        handoff["alternative_explanations"],
-        run_dir,
-        output,
-    )
-    lines.extend(["", "## Visibility gaps and unresolved questions", ""])
-    lines.extend(f"- {item}" for item in handoff["visibility_gaps"])
-    if not handoff["visibility_gaps"]:
-        lines.append("- None recorded.")
-    lines.extend(["", "## Completion gate", ""])
-    for name, item in handoff["completion_gate"].items():
-        result = "PASS" if item["passed"] else "FAIL"
+    lines.extend(["", "## Analysis method", ""])
+    for item in handoff["methodology"]:
         lines.append(
-            f"- **{result} — {name.replace('_', ' ')}:** {item['explanation']} "
+            f"- **{item['state'].replace('_', ' ').title()}:** {item['summary']} "
             f"{_references(item['evidence_refs'], run_dir, output)}"
         )
-    lines.extend(["", "## Evidence inventory", ""])
+    lines.extend(["", "## Completion checks", ""])
+    for name, item in handoff["completion_gate"].items():
+        result = "Pass" if item["passed"] else "Fail"
+        lines.append(
+            f"- **{result}, {name.replace('_', ' ')}:** {item['explanation']} "
+            f"{_references(item['evidence_refs'], run_dir, output)}"
+        )
+    lines.extend(["", "## Evidence index", ""])
     for item in handoff["evidence_inventory"]:
         lines.append(
-            f"- {_artifact_link(item['path'], run_dir, output)} — {item['description']}"
+            f"- {_artifact_link(item['path'], run_dir, output)}: {item['description']}"
         )
     return "\n".join(lines).rstrip() + "\n"
 
@@ -595,10 +810,10 @@ def _complete_function_map(lines: list[str], run_dir: Path, output: Path) -> Non
             row["name"],
             kind,
             row["classification"],
-            row["callers"] or "—",
-            row["callees"] or "—",
-            row["imports"] or "—",
-            row["strings"] or "—",
+            row["callers"] or "None",
+            row["callees"] or "None",
+            row["imports"] or "None",
+            row["strings"] or "None",
             row["reason"],
         ]
         lines.append("| " + " | ".join(_markdown_cell(cell) for cell in cells) + " |")
