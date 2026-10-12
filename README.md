@@ -131,6 +131,25 @@ The verifier checks containment, telemetry, tracing, capture, and GNU Debugger (
 It also checks audit loss, capacity, tool versions, and recovery readiness.
 The verifier fails closed when a required check fails.
 
+## Get operator access
+
+Get the Kibana login and the guest Secure Shell (SSH) connection data:
+
+```bash
+tartarus credentials show --range-id <range-id>
+```
+
+The command prints the generated Kibana password. Protect the terminal output.
+Use the `elastic` account to sign in to Kibana.
+
+Use the listed guest username and the listed controller private key for SSH.
+Tartarus installs this key during deployment.
+Do not use the image bootstrap password after deployment.
+
+The `kibana_system` account and the Elastic Agent API key are service credentials.
+Do not use them for an interactive login.
+Ludus manages the Proxmox credentials and the WireGuard configuration.
+
 Commands that change state show their resolved scope.
 Use `--yes` to approve a high-impact change or sample execution.
 Use `--confirm` to approve permanent range removal or a manual sandbox rebuild.

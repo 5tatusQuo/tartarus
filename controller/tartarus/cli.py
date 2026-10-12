@@ -12,6 +12,7 @@ from pathlib import Path
 import yaml
 
 from . import __version__
+from .access import operator_access
 from .artifacts import acquire_artifacts, locked_artifacts
 from .bundle import create_bundle, verify_bundle
 from .config import Config, default_config_path, load_config, save_config
@@ -197,6 +198,10 @@ def cmd_doctor(args: argparse.Namespace) -> None:
     emit(report)
     if not report["ready"]:
         raise SystemExit(2)
+
+
+def cmd_credentials(args: argparse.Namespace) -> None:
+    emit(operator_access(load_config(), args.range_id))
 
 
 def cmd_prepare(args: argparse.Namespace) -> None:
@@ -960,6 +965,13 @@ def parser() -> argparse.ArgumentParser:
     search.add_argument("query")
     search.add_argument("--size", type=int, default=50)
     search.set_defaults(func=cmd_telemetry)
+    credentials = commands.add_parser("credentials")
+    credential_actions = credentials.add_subparsers(
+        dest="credentials_action", required=True
+    )
+    credentials_show = credential_actions.add_parser("show")
+    credentials_show.add_argument("--range-id", required=True)
+    credentials_show.set_defaults(func=cmd_credentials)
     sandbox = commands.add_parser("sandbox")
     sandbox_actions = sandbox.add_subparsers(dest="sandbox_action", required=True)
     rebuild = sandbox_actions.add_parser("rebuild")
