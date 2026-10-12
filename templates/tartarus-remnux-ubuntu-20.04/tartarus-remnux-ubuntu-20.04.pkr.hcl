@@ -59,11 +59,11 @@ source "proxmox-iso" "tartarus_remnux" {
     bridge = var.ludus_nat_interface
     model  = "virtio"
   }
-  iso_url          = var.iso_url != "" ? var.iso_url : "https://cdimage.ubuntu.com/ubuntu-legacy-server/releases/20.04/release/ubuntu-20.04.1-legacy-server-amd64.iso"
-  iso_checksum     = var.iso_checksum
-  iso_storage_pool = var.iso_storage_pool
-  unmount_iso      = true
-  http_directory   = "http"
+  iso_url                = var.iso_url != "" ? var.iso_url : "https://cdimage.ubuntu.com/ubuntu-legacy-server/releases/20.04/release/ubuntu-20.04.1-legacy-server-amd64.iso"
+  iso_checksum           = var.iso_checksum
+  iso_storage_pool       = var.iso_storage_pool
+  unmount_iso            = true
+  http_directory         = "http"
   boot_key_interval      = "20ms"
   boot_keygroup_interval = "20ms"
   boot_command = [

@@ -59,12 +59,12 @@ source "proxmox-iso" "tartarus_debian12" {
     bridge = var.ludus_nat_interface
     model  = "virtio"
   }
-  iso_url          = var.iso_url != "" ? var.iso_url : "https://cdimage.debian.org/cdimage/archive/12.15.0/amd64/iso-cd/debian-12.15.0-amd64-netinst.iso"
-  iso_checksum     = var.iso_checksum
-  iso_storage_pool = var.iso_storage_pool
-  unmount_iso      = true
-  http_directory   = "http"
-  boot_wait        = "15s"
+  iso_url           = var.iso_url != "" ? var.iso_url : "https://cdimage.debian.org/cdimage/archive/12.15.0/amd64/iso-cd/debian-12.15.0-amd64-netinst.iso"
+  iso_checksum      = var.iso_checksum
+  iso_storage_pool  = var.iso_storage_pool
+  unmount_iso       = true
+  http_directory    = "http"
+  boot_wait         = "15s"
   boot_key_interval = "100ms"
   boot_command = [
     "<down><tab>",
