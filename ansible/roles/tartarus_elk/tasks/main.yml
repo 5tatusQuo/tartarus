@@ -89,6 +89,7 @@
   ansible.builtin.command:
     argv: [openssl, x509, -in, "{{ tartarus_elk_tls_dir }}/ca-export.pem", -out, "{{ tartarus_elk_tls_dir }}/ca.crt"]
     creates: "{{ tartarus_elk_tls_dir }}/ca.crt"
+  notify: Restart kibana
 
 - name: Generate Kibana TLS PEM archive
   ansible.builtin.command:
