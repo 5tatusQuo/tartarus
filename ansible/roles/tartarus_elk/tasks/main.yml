@@ -91,35 +91,6 @@
     creates: "{{ tartarus_elk_tls_dir }}/ca.crt"
   notify: Restart kibana
 
-- name: Generate Kibana TLS PEM archive
-  ansible.builtin.command:
-    argv:
-      - /usr/share/elasticsearch/bin/elasticsearch-certutil
-      - cert
-      - --silent
-      - --pem
-      - --ca
-      - "{{ tartarus_elk_tls_dir }}/ca.p12"
-      - --ca-pass
-      - ""
-      - --out
-      - "{{ tartarus_elk_tls_dir }}/kibana.zip"
-      - --name
-      - kibana
-      - --dns
-      - elk-01,localhost
-      - --ip
-      - "{{ ansible_host }},127.0.0.1"
-    creates: "{{ tartarus_elk_tls_dir }}/kibana.zip"
-  no_log: true
-
-- name: Extract Kibana TLS certificate
-  ansible.builtin.unarchive:
-    src: "{{ tartarus_elk_tls_dir }}/kibana.zip"
-    dest: "{{ tartarus_elk_tls_dir }}"
-    remote_src: true
-    creates: "{{ tartarus_elk_tls_dir }}/kibana/kibana.crt"
-
 - name: Protect Elastic TLS material
   ansible.builtin.file:
     path: "{{ item }}"
@@ -136,16 +107,6 @@
     owner: root
     group: root
     mode: "0644"
-
-- name: Protect Kibana private key
-  ansible.builtin.file:
-    path: "{{ item }}"
-    owner: root
-    group: kibana
-    mode: "0640"
-  loop:
-    - "{{ tartarus_elk_tls_dir }}/kibana/kibana.crt"
-    - "{{ tartarus_elk_tls_dir }}/kibana/kibana.key"
 
 - name: Configure secured single-node Elasticsearch
   ansible.builtin.copy:
@@ -365,7 +326,7 @@
     - {name: tartarus-runs, patterns: ["tartarus-runs*"], policy: tartarus-runs-30d}
   no_log: true
 
-- name: Configure TLS-protected Kibana
+- name: Configure Kibana on the isolated range network
   ansible.builtin.copy:
     dest: /etc/kibana/kibana.yml
     owner: root
@@ -373,9 +334,7 @@
     mode: "0640"
     content: |
       server.host: 0.0.0.0
-      server.ssl.enabled: true
-      server.ssl.certificate: {{ tartarus_elk_tls_dir }}/kibana/kibana.crt
-      server.ssl.key: {{ tartarus_elk_tls_dir }}/kibana/kibana.key
+      server.ssl.enabled: false
       elasticsearch.hosts: ["https://127.0.0.1:9200"]
       elasticsearch.username: kibana_system
       elasticsearch.password: "{{ tartarus_elk_bootstrap.kibana_password }}"
