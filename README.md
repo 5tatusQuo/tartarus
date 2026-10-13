@@ -154,7 +154,7 @@ Ludus manages the Proxmox credentials and the WireGuard configuration.
 
 Commands that change state show their resolved scope.
 Use `--yes` to approve a high-impact change or sample execution.
-Use `--confirm` to approve permanent range removal or a manual sandbox rebuild.
+Use `--confirm` to approve permanent range removal or a manual analysis-pair rebuild.
 
 The `prepare` command creates a temporary source upload.
 It adds the operator CIDR values to that upload.
@@ -233,7 +233,7 @@ browser storage, logs, reports, or run evidence.
      ./capture.pcapng
    ```
 
-6. Stop the run and recover the sandbox.
+6. Stop the run and recover the analysis pair.
 
    ```bash
    tartarus run stop \
@@ -246,9 +246,13 @@ The stop operation completes the packet capture and bounded traces.
 It transfers the evidence to controller-owned storage.
 It checks that each transferred file arrived with the expected size.
 
-The operation then destroys and redeploys the sandbox.
-It runs the live verification suite on the replacement sandbox.
+The operation then destroys and redeploys both REMnux and the sandbox.
+It runs the live verification suite on both replacement analysis guests.
 Tartarus does not accept a new run until recovery verification passes.
+
+Ranges created before analysis-pair recovery have no valid pair-recovery record. Migrate one
+before the next sample with `tartarus sandbox rebuild --range-id <range-id> --confirm`. The command
+name remains for compatibility, but it destroys and redeploys both REMnux and the sandbox.
 
 The controller does not give a guest write access to the evidence root.
 
@@ -257,7 +261,7 @@ The controller does not give a guest write access to the evidence root.
 Each completed run contains a `run.json` manifest, an AI-generated `report.md` threat report, and
 a `report-technical-annex.md` file.
 The manifest records artifact paths, sizes, and collection status.
-It also records visibility gaps and the sandbox recovery result.
+It also records visibility gaps and the per-guest analysis-pair recovery result.
 The main report uses ASD-STE100 language. It explains the assessment, capabilities, execution
 flow, observed behavior, security relevance, indicators, and detection guidance for human readers.
 The technical annex contains the complete Ghidra function map. Each program function and import

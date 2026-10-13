@@ -20,7 +20,14 @@ from .config import Config, default_config_path, load_config, save_config
 from .doctor import inspect_environment
 from .errors import ApprovalRequired, TartarusError
 from .keys import ensure_controller_ssh_key
-from .lifecycle import rebuild_sandbox, start_remote_run, stop_remote_run
+from .lifecycle import (
+    assert_analysis_pair_ready,
+    mark_analysis_pair_clean,
+    pair_recovery_state,
+    rebuild_sandbox,
+    start_remote_run,
+    stop_remote_run,
+)
 from .ludus import authenticated_user, run_ludus
 from .manifest import (
     collect_artifact,
@@ -556,6 +563,10 @@ def cmd_deploy(args: argparse.Namespace) -> None:
             "status": "deployed",
         },
     )
+    verification = verify_range(config, range_id)
+    if not verification["passed"]:
+        raise TartarusError("deployed analysis pair did not pass verification")
+    mark_analysis_pair_clean(config, range_id, verification, guests=inventory)
     print(f"deployment completed and testing mode enabled for {range_id}")
 
 
@@ -629,6 +640,7 @@ def cmd_run_start(args: argparse.Namespace) -> None:
         raise TartarusError(
             "deployment manifest does not identify this range; deploy or prepare the selected range first"
         )
+    assert_analysis_pair_ready(config, args.range_id)
     approve(
         args,
         {
@@ -640,7 +652,7 @@ def cmd_run_start(args: argparse.Namespace) -> None:
             "telemetry_profile": args.telemetry_profile,
             "duration_seconds": args.duration,
             "debug_session": args.debug,
-            "post_run_action": "collect evidence, destroy sandbox, redeploy and verify",
+            "post_run_action": "collect evidence, destroy both analysis guests, redeploy and verify",
         },
     )
     run = create_run(
@@ -723,7 +735,7 @@ def cmd_run_stop(args: argparse.Namespace) -> None:
         args,
         {
             **operation_context(config, run_manifest.get("range_id")),
-            "operation": "stop run, collect evidence, generate report, destroy and rebuild sandbox",
+            "operation": "stop run, collect evidence, generate report, destroy and rebuild the analysis pair",
             "case_id": args.case_id,
             "run_id": args.run_id,
             "quota_override": args.approve_quota_override,
@@ -777,19 +789,24 @@ def cmd_telemetry(args: argparse.Namespace) -> None:
 def cmd_sandbox_rebuild(args: argparse.Namespace) -> None:
     config = load_config()
     assert_managed_range(config, args.range_id)
-    guest = range_guests(config, args.range_id)["sandbox"]
+    guests = range_guests(config, args.range_id)
     approve(
         args,
         {
             **operation_context(config, args.range_id),
-            "vm": guest.name,
-            "vmid": guest.vmid,
-            "operation": "destroy and redeploy disposable sandbox",
+            "vms": [guests[role].name for role in ("remnux", "sandbox")],
+            "vmids": [guests[role].vmid for role in ("remnux", "sandbox")],
+            "operation": "destroy and redeploy the disposable analysis pair",
         },
         destructive=True,
     )
     report = rebuild_sandbox(config, args.range_id, wait_seconds=args.wait_seconds)
-    emit(report)
+    emit(
+        {
+            "verification": report,
+            "analysis_pair_recovery": pair_recovery_state(config, args.range_id),
+        }
+    )
     if not report["passed"]:
         raise SystemExit(2)
 

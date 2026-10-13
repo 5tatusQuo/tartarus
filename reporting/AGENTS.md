@@ -87,7 +87,7 @@ Use ASD-STE100 Simplified Technical English for all reader-facing text.
 ## Completion
 
 Return schema version `2.0`.
-Return `analysis_complete` only when every completion-gate item passes.
+Return `analysis_complete` only when every completion-gate item passes, including verified
+recovery of both REMnux and the sandbox.
 Otherwise return `analysis_incomplete` and enumerate the missing work as visibility gaps.
 A clear incomplete report is correct; an invented complete report is not.
-

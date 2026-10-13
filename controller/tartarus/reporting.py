@@ -99,7 +99,7 @@ def generate_agent_report(
             candidate = _normalize_reader_facing_language(candidate)
             atomic_json(attempt_handoff, candidate)
             validate("analysis-handoff", candidate)
-            _validate_handoff(run_dir, candidate, permitted_evidence)
+            _validate_handoff(run_dir, candidate, permitted_evidence, run)
         except (TartarusError, FileNotFoundError, json.JSONDecodeError) as exc:
             feedback = str(exc)
             if attempt == REPORT_ATTEMPTS:
@@ -283,6 +283,7 @@ def _report_context(run_file: Path, run: dict[str, Any], session_dir: Path) -> d
             "stopped_at": run.get("stopped_at"),
             "debug_session": run.get("debug_session", False),
             "recovery_verified": run.get("recovery_verified", False),
+            "analysis_pair_recovery": run.get("analysis_pair_recovery"),
             "visibility_gaps": run.get("visibility_gaps", []),
         },
         "evidence_files": evidence,
@@ -303,7 +304,9 @@ Produce a proper threat-analysis handoff, not a manifest summary. Account for st
 evidence, behaviorally relevant functions, IOCs, MITRE ATT&CK, attribution limits, and defensible
 Sigma detections. Use empty arrays and explicit unsupported assessments when evidence does not
 support a category. Cite every material claim with existing run-relative evidence paths. Mark the
-analysis incomplete whenever the completion gate is not fully supported.
+analysis incomplete whenever the completion gate is not fully supported. Treat only a clean,
+verified analysis_pair_recovery record as recovery proof. A legacy recovery_verified value proves
+only the former sandbox-only policy.
 
 Return schema version 2.0. Write the reader-facing fields in ASD-STE100 Simplified Technical
 English. Create a human threat-analysis narrative, not a decompilation report. Explain what the
@@ -328,7 +331,10 @@ Validation failure: {json.dumps(feedback)}
 
 
 def _validate_handoff(
-    run_dir: Path, handoff: dict[str, Any], permitted_evidence: set[str]
+    run_dir: Path,
+    handoff: dict[str, Any],
+    permitted_evidence: set[str],
+    run: dict[str, Any],
 ) -> None:
     _reject_opaque_content_identifiers(handoff)
     _validate_simplified_english(handoff)
@@ -339,6 +345,11 @@ def _validate_handoff(
         if not path.is_relative_to(run_dir) or not path.is_file():
             raise TartarusError(f"analysis handoff cites missing evidence: {reference}")
     gates = handoff["completion_gate"].values()
+    pair_clean = run.get("analysis_pair_recovery", {}).get("state") == "clean"
+    if handoff["completion_gate"]["analysis_pair_recovery"]["passed"] != pair_clean:
+        raise TartarusError(
+            "analysis-pair completion gate does not agree with the persisted recovery state"
+        )
     all_passed = all(item["passed"] for item in gates)
     if (handoff["analysis_state"] == "analysis_complete") != all_passed:
         raise TartarusError("analysis state does not agree with the completion gate")

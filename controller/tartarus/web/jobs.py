@@ -75,6 +75,7 @@ class JobStore:
                 "event_cursor": 0,
                 "resumability": "not_started",
                 "failure": None,
+                "analysis_pair_recovery": None,
             }
             token = secrets.token_urlsafe(32)
             self._approval_tokens[job_id] = (token, expires)
@@ -147,6 +148,16 @@ class JobStore:
             self._save(job)
             return event
 
+    def set_analysis_pair_recovery(
+        self, job_id: str, recovery: dict[str, Any] | None
+    ) -> dict[str, Any]:
+        with self._lock:
+            job = self.get(job_id)
+            job["analysis_pair_recovery"] = recovery
+            job["updated_at"] = utc_now()
+            self._save(job)
+            return job
+
     def events(self, job_id: str, after: int = 0) -> list[dict[str, Any]]:
         self.get(job_id)
         path = self._events_path(job_id)
@@ -203,9 +214,15 @@ def _bounded_message(message: str) -> str:
 class WorkflowRunner:
     """Runs a workflow in one background thread without weakening cleanup semantics."""
 
-    def __init__(self, store: JobStore, operation: Callable[[dict[str, Any], JobStore], None]):
+    def __init__(
+        self,
+        store: JobStore,
+        operation: Callable[[dict[str, Any], JobStore], None],
+        cleanup: Callable[[dict[str, Any], JobStore], None] | None = None,
+    ):
         self.store = store
         self.operation = operation
+        self.cleanup = cleanup
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
 
@@ -226,15 +243,17 @@ class WorkflowRunner:
         try:
             self.operation(job, self.store)
         except AuthenticationRequired as exc:
+            cleanup_failure = self._safe_cleanup(job_id)
             self.store.transition(
                 job_id,
                 "attention",
                 status="needs_attention",
                 message=str(exc),
                 resumability="blocked",
-                failure=str(exc),
+                failure=str(exc) if cleanup_failure is None else f"{exc}; recovery failed: {cleanup_failure}",
             )
         except Exception as exc:  # noqa: BLE001 - persist all background failures
+            cleanup_failure = self._safe_cleanup(job_id)
             current = self.store.get(job_id)
             if current["status"] == "cancel_requested":
                 self.store.transition(
@@ -243,7 +262,7 @@ class WorkflowRunner:
                     status="needs_attention",
                     message="The AI agent canceled the workflow before execution completed.",
                     resumability="safe_cleanup_only",
-                    failure=current["failure"] or str(exc),
+                    failure=current["failure"] or str(cleanup_failure or exc),
                 )
                 return
             self.store.transition(
@@ -252,5 +271,14 @@ class WorkflowRunner:
                 status="failed",
                 message=f"Workflow failed: {exc}",
                 resumability="safe_cleanup_only",
-                failure=str(exc),
+                failure=str(exc) if cleanup_failure is None else f"{exc}; recovery failed: {cleanup_failure}",
             )
+
+    def _safe_cleanup(self, job_id: str) -> Exception | None:
+        if self.cleanup is None:
+            return None
+        try:
+            self.cleanup(self.store.get(job_id), self.store)
+        except Exception as exc:  # noqa: BLE001 - the recovery state records the detail
+            return exc
+        return None

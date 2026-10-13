@@ -33,6 +33,27 @@
     },
     "event_cursor": {"type": "integer", "minimum": 0},
     "resumability": {"enum": ["not_started", "safe_cleanup_only", "complete", "blocked"]},
-    "failure": {"type": ["string", "null"]}
+    "failure": {"type": ["string", "null"]},
+    "analysis_pair_recovery": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["state", "phase", "guests", "failure"],
+          "properties": {
+            "state": {"enum": ["unverified", "clean", "tainted", "recovering", "quarantined"]},
+            "phase": {"enum": ["unverified", "tainted", "freezing", "collecting", "destroying", "redeploying", "verifying", "verified", "failed"]},
+            "guests": {
+              "type": "object", "required": ["remnux", "sandbox"],
+              "properties": {
+                "remnux": {"type": "object", "required": ["status"]},
+                "sandbox": {"type": "object", "required": ["status"]}
+              }
+            },
+            "failure": {"type": ["string", "null"]}
+          }
+        }
+      ]
+    }
   }
 }

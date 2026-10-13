@@ -13,11 +13,11 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from fastapi.testclient import TestClient
 from tartarus.config import Config
-from tartarus.errors import ApprovalRequired, TartarusError
+from tartarus.errors import ApprovalRequired, AuthenticationRequired, TartarusError
 from tartarus.manifest import create_case, create_run, stage_sample
 from tartarus.providers import ChatGPTCodexProvider
 from tartarus.web.app import SessionSecurity, create_app
-from tartarus.web.jobs import JobStore
+from tartarus.web.jobs import JobStore, WorkflowRunner
 from tartarus.web.oauth import ChatGPTAuth
 from tartarus.web.service import ConsoleService
 
@@ -79,6 +79,33 @@ def test_job_store_never_resumes_an_interrupted_workflow(tmp_path: Path) -> None
     assert reconciled["resumability"] == "safe_cleanup_only"
 
 
+def test_workflow_authentication_failure_runs_safe_cleanup(tmp_path: Path) -> None:
+    store = JobStore(tmp_path)
+    job, token = store.create(
+        case_id="case-1",
+        sample_id="sample-1",
+        range_id="range-1",
+        run_id="run-1",
+        scope={},
+    )
+    store.approve(job["job_id"], token)
+    cleaned: list[str] = []
+
+    def operation(_job, _store):
+        raise AuthenticationRequired("authorization expired")
+
+    def cleanup(current, _store):
+        cleaned.append(current["job_id"])
+
+    runner = WorkflowRunner(store, operation, cleanup)
+    runner.start(job["job_id"])
+    assert runner._thread is not None
+    runner._thread.join(timeout=2)
+
+    assert cleaned == [job["job_id"]]
+    assert store.get(job["job_id"])["status"] == "needs_attention"
+
+
 def test_upload_uses_random_temporary_path_and_rejects_unsafe_filename(tmp_path: Path) -> None:
     config = _config(tmp_path)
     case = create_case(config.evidence_root, "case-1")
@@ -114,7 +141,9 @@ def test_zip_upload_stages_archive_without_opening_it(tmp_path: Path) -> None:
     assert staged.read_bytes() == archive
 
 
-def test_archive_password_is_only_held_in_transient_workflow_memory(tmp_path: Path) -> None:
+def test_archive_password_is_only_held_in_transient_workflow_memory(
+    tmp_path: Path, monkeypatch
+) -> None:
     config = _config(tmp_path)
     case = create_case(config.evidence_root, "case-1")
     service = ConsoleService(config, JobStore(config.cache_root), ChatGPTAuth(config.cache_root))
@@ -125,6 +154,18 @@ def test_archive_password_is_only_held_in_transient_workflow_memory(tmp_path: Pa
     )
     service.auth.status = lambda: {"connected": True, "plan_usage": True}
     service._assert_managed = lambda _range_id: None
+    monkeypatch.setattr(
+        "tartarus.web.service.assert_analysis_pair_ready",
+        lambda *_args, **_kwargs: {
+            "state": "clean",
+            "phase": "verified",
+            "guests": {
+                "remnux": {"status": "verified"},
+                "sandbox": {"status": "verified"},
+            },
+            "failure": None,
+        },
+    )
     state = config.cache_root / "state"
     state.mkdir()
     (state / "prepare-manifest.json").write_text(

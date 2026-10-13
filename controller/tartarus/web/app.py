@@ -61,7 +61,8 @@ def create_app(config: Config | None = None) -> FastAPI:
     jobs = JobStore(resolved.cache_root)
     auth = ChatGPTAuth(resolved.cache_root)
     service = ConsoleService(resolved, jobs, auth)
-    runner = WorkflowRunner(jobs, service.execute_workflow)
+    runner = WorkflowRunner(jobs, service.execute_workflow, service.recover_failed_job)
+    service.resume_interrupted_recoveries()
     sessions = SessionSecurity(resolved.cache_root)
     templates = Environment(
         loader=FileSystemLoader(PACKAGE_ROOT / "templates"),
@@ -242,7 +243,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     @app.post("/api/ranges/{range_id}/rebuild")
     async def api_rebuild(range_id: str, body: RebuildBody):
         if body.confirmation != range_id:
-            raise HTTPException(400, "type the range ID to confirm sandbox rebuild")
+            raise HTTPException(400, "type the range ID to confirm analysis-pair rebuild")
         return await asyncio.to_thread(service.rebuild, range_id)
 
     @app.get("/api/cases")

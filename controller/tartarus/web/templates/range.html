@@ -6,7 +6,8 @@
 <section class="card range-card" data-range-id="{{ range.range_id }}">
   <div class="section-title"><div><span class="eyebrow">Managed range</span><h2>{{ range.range_id }}</h2></div><span class="pill {{ 'success' if range.telemetry and range.telemetry.healthy else 'warning' }}">Telemetry {{ 'healthy' if range.telemetry and range.telemetry.healthy else 'needs review' }}</span></div>
   {% if range.guests %}<div class="machine-grid">{% for guest in range.guests %}<article><span class="machine-role">{{ guest.role }}</span><strong>{{ guest.name }}</strong><small>{{ guest.address }} · VM {{ guest.vmid }}</small><span class="machine-state"><i class="status-dot good"></i> Inventory resolved</span></article>{% endfor %}</div>{% endif %}
-  <div class="form-actions"><button class="button secondary" data-verify-range>Run readiness verification</button><button class="button danger-outline" data-rebuild-range>Rebuild disposable sandbox</button></div>
+  {% set pair = range.analysis_pair_recovery %}<div class="metric-row"><span>Analysis pair</span><strong>{{ pair.state|replace('_',' ') if pair else 'unverified' }}</strong></div><div class="metric-row"><span>REMnux</span><strong>{{ pair.guests.remnux.status if pair else 'unverified' }}</strong></div><div class="metric-row"><span>Sandbox</span><strong>{{ pair.guests.sandbox.status if pair else 'unverified' }}</strong></div>
+  <div class="form-actions"><button class="button secondary" data-verify-range>Run readiness verification</button><button class="button danger-outline" data-rebuild-range>Rebuild disposable analysis pair</button></div>
   <div class="range-result" aria-live="polite"></div>
 </section>
 {% else %}<section class="card empty"><span>⌁</span><h3>No accessible managed ranges</h3><p>Check the Ludus connection and controller deployment state.</p></section>{% endfor %}

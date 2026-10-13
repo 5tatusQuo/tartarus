@@ -120,7 +120,7 @@ document.querySelectorAll('[data-verify-range]').forEach((button) => button.addE
 document.querySelectorAll('[data-rebuild-range]').forEach((button) => button.addEventListener('click', async () => {
   const card = button.closest('[data-range-id]');
   const rangeId = card.dataset.rangeId;
-  const confirmation = window.prompt(`Type ${rangeId} to destroy and rebuild only the disposable sandbox.`);
+  const confirmation = window.prompt(`Type ${rangeId} to destroy and rebuild both disposable analysis guests.`);
   if (confirmation !== rangeId) return;
   button.disabled = true;
   try { const report = await api(`/api/ranges/${encodeURIComponent(rangeId)}/rebuild`, {method: 'POST', body: JSON.stringify({confirmation})}); notify(report.passed ? 'Sandbox rebuilt and verified.' : 'Sandbox rebuild requires attention.', !report.passed); }

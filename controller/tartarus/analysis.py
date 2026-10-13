@@ -12,7 +12,7 @@ from typing import Any
 from .config import Config, default_config_path
 from .elf import triage_elf
 from .errors import AuthenticationRequired, TartarusError
-from .lifecycle import _stage
+from .lifecycle import _stage, assert_analysis_pair_ready, mark_analysis_pair_tainted
 from .manifest import project_root, schema_path, validate
 from .providers import CliCodexProvider, CodexProvider
 from .remote import Remote, range_guests
@@ -168,7 +168,12 @@ def prepare_archive_with_agent(
     if not executable:
         raise TartarusError("Codex CLI is not installed or is not on PATH")
     resolved_config = (config_path or default_config_path()).resolve(strict=True)
+    assert_analysis_pair_ready(config, range_id, run_id=run["run_id"])
     remnux = Remote(config, range_guests(config, range_id)["remnux"])
+    run["range_id"] = range_id
+    atomic_json(run_file, run)
+    mark_analysis_pair_tainted(config, range_id, run_file)
+    run = load_json(run_file)
     _stage(
         remnux,
         archive,
@@ -178,7 +183,6 @@ def prepare_archive_with_agent(
         sample_mode="0400",
         destination_name="input.zip",
     )
-    run["range_id"] = range_id
     run["status"] = "preparing"
     atomic_json(run_file, run)
 

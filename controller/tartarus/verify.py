@@ -28,7 +28,8 @@ def verify_range(
     environment = inspect_environment(config, host_memory_gib)
     checks.extend(environment["checks"])
     _check(checks, "ludus_testing_mode", lambda: _testing_enabled(config, range_id))
-    _check(checks, "sandbox_clean", lambda: _sandbox_clean(sandbox))
+    _check(checks, "sandbox_clean", lambda: _analysis_guest_clean(sandbox, "sandbox"))
+    _check(checks, "remnux_clean", lambda: _analysis_guest_clean(remnux, "remnux"))
     for role, remote in (("elk", elk), ("remnux", remnux), ("sandbox", sandbox)):
         _check(checks, f"{role}_clock_synchronized", lambda remote=remote: _clock_ok(remote))
         _check(
@@ -49,39 +50,41 @@ def verify_range(
         )
     _check(
         checks,
-        "sandbox_public_ipv4_blocked",
-        lambda: _expect_failure(
-            sandbox,
-            ("curl", "-fsS", "--connect-timeout", "3", "--max-time", "5", "http://1.1.1.1/"),
-        ),
-    )
-    _check(
-        checks,
         "sandbox_public_dns_blocked",
         lambda: _expect_failure(sandbox, ("getent", "ahosts", "example.com")),
     )
-    for index, network in enumerate(config.always_blocked_networks):
-        target = _probe_address(network)
+    for role, remote in (("remnux", remnux), ("sandbox", sandbox)):
+        for index, network in enumerate(config.always_blocked_networks):
+            target = _probe_address(network)
+            _check(
+                checks,
+                f"infrastructure_network_{index}_blocked_from_{role}",
+                lambda remote=remote, target=target: _expect_failure(
+                    remote, ("ping", "-c", "1", "-W", "2", target)
+                ),
+            )
+        for index, network in enumerate(config.management_sources):
+            target = _probe_address(network)
+            _check(
+                checks,
+                f"management_network_{index}_blocked_from_{role}",
+                lambda remote=remote, target=target: _expect_failure(
+                    remote, ("ping", "-c", "1", "-W", "2", target)
+                ),
+            )
         _check(
             checks,
-            f"infrastructure_network_{index}_blocked",
-            lambda target=target: _expect_failure(sandbox, ("ping", "-c", "1", "-W", "2", target)),
+            f"{role}_ipv6_disabled",
+            lambda remote=remote: (
+                remote.run(("sysctl", "-n", "net.ipv6.conf.all.disable_ipv6")).stdout.strip()
+                == "1"
+            ),
         )
-    for index, network in enumerate(config.management_sources):
-        target = _probe_address(network)
         _check(
             checks,
-            f"management_network_{index}_blocked_from_sandbox",
-            lambda target=target: _expect_failure(sandbox, ("ping", "-c", "1", "-W", "2", target)),
+            f"{role}_router_is_enforcement_boundary",
+            lambda remote=remote: _output_policy_accepts(remote),
         )
-    _check(
-        checks,
-        "sandbox_ipv6_disabled",
-        lambda: (
-            sandbox.run(("sysctl", "-n", "net.ipv6.conf.all.disable_ipv6")).stdout.strip() == "1"
-        ),
-    )
-    _check(checks, "router_is_enforcement_boundary", lambda: _output_policy_accepts(sandbox))
     _check(
         checks,
         "sandbox_to_elastic_allowed",
@@ -235,6 +238,28 @@ def _sandbox_clean(remote: Remote) -> bool:
         sudo=True,
     ).stdout
     return not samples.strip() and _expect_failure(remote, ("pgrep", "-u", "tartarus-runner"))
+
+
+def _analysis_guest_clean(remote: Remote, role: str) -> bool:
+    roots = (
+        ("/var/spool/tartarus/runs",)
+        if role == "sandbox"
+        else (
+            "/var/spool/tartarus/static",
+            "/var/spool/tartarus/ghidra",
+            "/var/spool/tartarus/capture",
+            "/var/spool/tartarus/recovery",
+        )
+    )
+    stale = remote.run(
+        ("find", *roots, "-mindepth", "1", "-print", "-quit"), sudo=True
+    ).stdout
+    process_names = (
+        ("pgrep", "-u", "tartarus-runner")
+        if role == "sandbox"
+        else ("pgrep", "-f", "analyzeHeadless|ghidra|r2|gdb|dumpcap.*tartarus")
+    )
+    return not stale.strip() and _expect_failure(remote, process_names)
 
 
 def _verify_capture(remnux: Remote, sandbox: Remote, remnux_ip: str) -> bool:

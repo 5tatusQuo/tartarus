@@ -66,7 +66,7 @@ Only these flows are permitted:
 
 Guests cannot initiate connections to WireGuard clients, public networks, the Proxmox host, the Ludus API, or operator-defined infrastructure networks. Isolation tests are repeated with the sandbox guest firewall disabled to prove that enforcement occurs on the Ludus router.
 
-Ludus testing mode remains enabled as an additional egress barrier. ELK and REMnux use `testing.snapshot: false`; the sandbox is snapshot-eligible. A testing-mode rollback is allowed for benign validation only. Every untrusted run ends with sandbox destruction and redeployment.
+Ludus testing mode remains enabled as an additional egress barrier. REMnux and the sandbox use `testing.snapshot: false`. Every untrusted run destroys and redeploys both analysis guests from the clean versioned templates.
 
 ## 4. Reproducible provisioning
 
