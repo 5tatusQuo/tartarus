@@ -359,6 +359,14 @@ def _reverse_engineering_versions_ok(remnux: Remote) -> bool:
         and "7.2.2" in _command_version(remnux, ("zeek", "--version"))
         and "1.3.2" in _command_version(remnux, ("inetsim", "--version"))
         and bool(version.stdout.strip())
+        and remnux.run(
+            (
+                "test",
+                "-s",
+                "/opt/ghidra_11.4.2_PUBLIC/Ghidra/Processors/ARC/data/languages/ARCompact.sla",
+            )
+        ).returncode
+        == 0
     )
 
 

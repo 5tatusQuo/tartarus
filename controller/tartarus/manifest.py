@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import shutil
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +21,13 @@ def project_root() -> Path:
 
 
 def schema(name: str) -> dict[str, Any]:
-    return json.loads((project_root() / "schemas" / f"{name}.schema.json").read_text())
+    return json.loads(schema_path(name).read_text())
+
+
+def schema_path(name: str) -> Path:
+    repository_path = project_root() / "schemas" / f"{name}.schema.json"
+    packaged_path = Path(__file__).parent / "schemas" / f"{name}.schema.json"
+    return repository_path if repository_path.is_file() else packaged_path
 
 
 def validate(name: str, document: dict[str, Any]) -> None:
@@ -58,7 +65,8 @@ def stage_sample(evidence_root: Path, case_id: str, source: Path) -> dict[str, A
     if source.stat().st_size > MAX_SAMPLE_BYTES:
         raise TartarusError("sample exceeds the 1 GiB execution input limit")
     sample_id = new_id("sample")
-    elf = triage_elf(source)
+    is_zip = zipfile.is_zipfile(source)
+    elf = None if is_zip else triage_elf(source)
     destination = evidence_root / case_id / "samples" / sample_id / "sample.bin"
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.parent.chmod(0o700)
@@ -69,9 +77,12 @@ def stage_sample(evidence_root: Path, case_id: str, source: Path) -> dict[str, A
         "original_name": source.name,
         "size": source.stat().st_size,
         "staged_at": utc_now(),
-        "media_type": "application/x-elf",
-        "elf": elf,
+        "media_type": "application/zip" if is_zip else "application/x-elf",
     }
+    if elf is not None:
+        record["elf"] = elf
+    else:
+        record["archive"] = {"format": "zip"}
     case["samples"].append(record)
     validate("case-manifest", case)
     atomic_json(case_file, case)

@@ -1,4 +1,10 @@
+fastapi==0.143.0
+Jinja2==3.1.6
+markdown-it-py==4.2.0
 platformdirs==4.12.4
+PyJWT[crypto]==2.15.1
 PyYAML==6.0.3
 jsonschema==4.26.0
+python-multipart==0.0.32
 typing-extensions==4.16.0
+uvicorn==0.53.0

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>{% block title %}Tartarus{% endblock %} · Operator Console</title>
+  <link rel="icon" href="/brand/tartarus-icon.png">
+  <link rel="stylesheet" href="/static/console.css">
+  <link rel="stylesheet" href="/static/workflow.css">
+  <script src="/static/console.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="shell">
+    <aside class="sidebar" aria-label="Primary navigation">
+      <a class="brand" href="/">
+        <img src="/brand/tartarus-icon.png" alt="">
+        <span><b>Tartarus</b><small>Operator Console</small></span>
+      </a>
+      <nav>
+        <a href="/" {% if current_path == '/' %}aria-current="page"{% endif %}><span>⌂</span> Overview</a>
+        <a href="/analysis/new" {% if current_path.startswith('/analysis') %}aria-current="page"{% endif %}><span>＋</span> New analysis</a>
+        <a href="/runs" {% if current_path.startswith('/runs') %}aria-current="page"{% endif %}><span>◫</span> Runs</a>
+        <a href="/reports" {% if current_path.startswith('/reports') %}aria-current="page"{% endif %}><span>≣</span> Reports</a>
+        <a href="/range" {% if current_path == '/range' %}aria-current="page"{% endif %}><span>⌁</span> Range</a>
+        <a href="/settings" {% if current_path == '/settings' %}aria-current="page"{% endif %}><span>⚙</span> Settings</a>
+      </nav>
+      <div class="sidebar-status">
+        <span class="status-dot {{ 'good' if chatgpt.connected else 'muted' }}"></span>
+        <div><small>AI account</small><strong>{{ chatgpt.email or 'Not connected' }}</strong></div>
+      </div>
+    </aside>
+    <main id="main" tabindex="-1">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

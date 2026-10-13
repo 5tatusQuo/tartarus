@@ -1,0 +1,40 @@
+.timeline {
+  grid-template-columns: repeat(8, 1fr);
+}
+
+.status-banner.danger {
+  background: rgba(223, 91, 85, 0.07);
+  border-color: rgba(223, 91, 85, 0.3);
+}
+
+.status-banner.danger > span {
+  background: var(--red);
+  color: #210707;
+}
+
+.status-banner.danger .text-link {
+  display: inline-block;
+  margin-top: 8px;
+  color: #f6aaa6;
+}
+
+.stream-heartbeat {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.timeline li.failed > span {
+  background: rgba(223, 91, 85, 0.16);
+  border-color: var(--red);
+  color: #f6aaa6;
+}
+
+.timeline li.failed small {
+  color: #f2938e;
+}
+
+@media (max-width: 1000px) {
+  .timeline {
+    grid-template-columns: 1fr;
+  }
+}

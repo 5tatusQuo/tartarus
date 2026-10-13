@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}New analysis{% endblock %}
+{% block content %}
+<header class="topbar compact"><div><span class="eyebrow">Guided workflow</span><h1>Start a contained analysis</h1><p>Every execution is verified, bounded, collected, and followed by sandbox recovery.</p></div></header>
+<div class="wizard" data-analysis-wizard>
+  <ol class="stepper" aria-label="Analysis setup progress">
+    <li class="active"><span>1</span> Sample</li><li><span>2</span> Range</li><li><span>3</span> Controls</li><li><span>4</span> Approve</li>
+  </ol>
+  <section class="card wizard-card">
+    <div class="form-grid">
+      <div class="field"><label for="case-id">Case ID</label><input id="case-id" name="case_id" placeholder="incident-2026-014" autocomplete="off"><small>Use an existing case ID or create a new one.</small></div>
+      <div class="field"><label for="sample-file">ELF sample or ZIP archive</label><label class="dropzone" for="sample-file"><span>⇧</span><strong>Choose a sample</strong><small>ELF or single-payload ZIP · maximum 1 GiB · stored locally</small></label><input class="visually-hidden" id="sample-file" type="file" name="sample" accept=".elf,.zip,application/x-elf,application/zip" required></div>
+      <div class="field"><label for="zip-password">ZIP password <span class="subtle">Optional</span></label><input id="zip-password" name="password" type="text" maxlength="1024" autocomplete="off" spellcheck="false" placeholder="e.g. infected"></div>
+      <div class="field"><label for="range-id">Tartarus range</label><select id="range-id" name="range_id" required><option value="">Select a managed range</option>{% for range in ranges %}<option value="{{ range.range_id }}">{{ range.name }} · {{ range.range_id }}</option>{% endfor %}</select><small>Only the deployed, controller-owned range can execute the sample.</small></div>
+      <div class="field split"><div><label for="profile">Telemetry</label><select id="profile"><option value="deep" selected>Deep · debugger + full correlation</option><option value="standard">Standard</option><option value="lightweight">Lightweight</option></select></div><div><label for="duration">Limit</label><select id="duration"><option value="300">5 minutes</option><option value="600">10 minutes</option><option value="1800">30 minutes</option><option value="3600">60 minutes</option></select></div></div>
+    </div>
+    <div class="safety-note"><span>▣</span><div><strong>Execution remains locked until verification passes.</strong><p>Tartarus will show the exact range, sample, limits, and recovery action before approval.</p></div></div>
+    <div class="form-actions"><a class="button ghost" href="/">Cancel</a><button class="button primary" type="button" data-prepare-analysis>Review execution <span>→</span></button></div>
+  </section>
+  <dialog id="approval-dialog" class="approval-dialog">
+    <form method="dialog"><button class="dialog-close" aria-label="Close">×</button></form>
+    <span class="eyebrow">Explicit operator approval</span><h2>Confirm contained execution</h2>
+    <p>The sample will execute only after a fresh full-range verification passes.</p>
+    <dl id="approval-scope" class="scope-list"></dl>
+    <label class="check-row"><input id="approval-check" type="checkbox"><span>I understand that this executes the staged untrusted ELF in the disposable sandbox and triggers collection, rebuild, verification, and reporting.</span></label>
+    <button class="button danger full" type="button" data-approve-analysis disabled>Approve and begin analysis</button>
+  </dialog>
+</div>
+{% endblock %}

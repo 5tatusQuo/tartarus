@@ -26,3 +26,20 @@ def test_ids_cannot_escape_evidence_root(tmp_path: Path) -> None:
 def test_run_rejects_invalid_sample_identifier(tmp_path: Path) -> None:
     with pytest.raises(TartarusError, match="invalid sample ID"):
         create_run(tmp_path, "case-1", "../escape", "standard", "test")
+
+
+def test_case_accepts_non_amd64_elf_for_static_analysis(tmp_path: Path) -> None:
+    case = create_case(tmp_path, "case-arc")
+    sample = tmp_path / "arc.elf"
+    sample.write_bytes(
+        b"\x7fELF\x01\x01\x01" + b"\x00" * 9 + b"\x02\x00\x5d\x00" + b"\x00" * 44
+    )
+
+    staged = stage_sample(tmp_path, case["case_id"], sample)
+
+    assert staged["elf"] == {
+        "class": 32,
+        "endianness": "little",
+        "type": 2,
+        "machine": 93,
+    }

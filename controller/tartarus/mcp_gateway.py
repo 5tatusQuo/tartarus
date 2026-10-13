@@ -6,7 +6,7 @@ import sys
 import tempfile
 import time
 import uuid
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from .config import Config, load_config
@@ -38,9 +38,49 @@ RUN = _strings("range_id", "run_id")
 
 TOOLS = [
     {
+        "name": "workflow_update",
+        "description": "Publish a bounded operator-facing progress or limitation message",
+        "inputSchema": _schema(
+            ["range_id", "run_id", "message", "level"],
+            {
+                **RUN,
+                "message": {"type": "string", "minLength": 1, "maxLength": 2000},
+                "level": {"enum": ["info", "warning"]},
+            },
+        ),
+    },
+    {
+        "name": "workflow_cancel",
+        "description": "Ask the controller to cancel safely and show the reason to the operator",
+        "inputSchema": _schema(
+            ["range_id", "run_id", "reason"],
+            {**RUN, "reason": {"type": "string", "minLength": 1, "maxLength": 2000}},
+        ),
+    },
+    {
         "name": "analysis_capabilities",
         "description": "Inventory the local analysis tools available for the current run",
         "inputSchema": _schema(["range_id", "run_id"], RUN),
+    },
+    {
+        "name": "archive_members",
+        "description": "List the staged ZIP members during the current run's preparation phase",
+        "inputSchema": _schema(
+            ["range_id", "run_id", "password"],
+            {**RUN, "password": {"type": "string", "maxLength": 1024}},
+        ),
+    },
+    {
+        "name": "archive_extract_elf",
+        "description": "Extract one agent-selected ZIP member and accept it only if it is an ELF",
+        "inputSchema": _schema(
+            ["range_id", "run_id", "member", "password"],
+            {
+                **RUN,
+                "member": {"type": "string", "minLength": 1, "maxLength": 4096},
+                "password": {"type": "string", "maxLength": 1024},
+            },
+        ),
     },
     {
         "name": "telemetry_health",
@@ -167,10 +207,60 @@ def _execute_tool(
 ) -> Any:
     range_id = run["range_id"]
     run_id = run["run_id"]
+    if name in {"workflow_update", "workflow_cancel"}:
+        return _workflow_control(config, run_id, name, arguments)
     guests = range_guests(config, range_id)
     remnux = Remote(config, guests["remnux"])
     sandbox = Remote(config, guests["sandbox"])
     sample = f"/var/spool/tartarus/static/{run_id}/sample"
+
+    if name in {"archive_members", "archive_extract_elf"}:
+        if run.get("status") != "preparing":
+            raise TartarusError("archive tools are available only during input preparation")
+        archive = f"/var/spool/tartarus/static/{run_id}/input.zip"
+        password = _password(arguments)
+        seven_zip = _archive_tool(remnux)
+        if name == "archive_members":
+            return _tool_output(
+                remnux.run(
+                    (seven_zip, "l", "-slt", f"-p{password}", archive),
+                    timeout=300,
+                ).stdout
+            )
+        member = _string(arguments, "member")
+        member_path = PurePosixPath(member)
+        if (
+            member_path.is_absolute()
+            or ".." in member_path.parts
+            or "\\" in member
+            or not member_path.name
+        ):
+            raise TartarusError("archive member path is unsafe")
+        output_dir = f"/var/spool/tartarus/static/{run_id}/archive-output"
+        remnux.run(("rm", "-rf", output_dir), timeout=60)
+        remnux.run(("mkdir", "-m", "0700", output_dir), timeout=60)
+        remnux.run(
+            (
+                seven_zip,
+                "e",
+                "-y",
+                f"-p{password}",
+                f"-o{output_dir}",
+                archive,
+                member,
+            ),
+            timeout=900,
+        )
+        extracted = f"{output_dir}/{member_path.name}"
+        validation = (
+            "import os,shutil,stat,sys;"
+            "p,d=sys.argv[1:3];s=os.lstat(p);"
+            "assert stat.S_ISREG(s.st_mode) and s.st_size<=1073741824;"
+            "assert open(p,'rb').read(4)==b'\\x7fELF';"
+            "shutil.copyfile(p,d);os.chmod(d,0o400)"
+        )
+        remnux.run(("python3", "-c", validation, extracted, sample), timeout=300)
+        return {"prepared": True, "member": member, "sample": sample}
 
     if name == "analysis_capabilities":
         return _capabilities(remnux)
@@ -249,6 +339,52 @@ def _execute_tool(
         )
 
     raise TartarusError(f"unknown analysis tool: {name}")
+
+
+def _workflow_control(
+    config: Config, run_id: str, name: str, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    from .web.jobs import JobStore
+
+    store = JobStore(config.cache_root, reconcile=False)
+    matches = [job for job in store.list() if job["run_id"] == run_id]
+    if len(matches) != 1:
+        raise TartarusError("current workflow job could not be resolved")
+    job = matches[0]
+    if job["status"] not in {"queued", "running", "cancel_requested"}:
+        raise TartarusError("workflow is no longer active")
+    if name == "workflow_update":
+        message = _string(arguments, "message")
+        level = _string(arguments, "level")
+        if level not in {"info", "warning"}:
+            raise TartarusError("invalid workflow update level")
+        event = store.append_event(
+            job["job_id"], job["phase"], f"AI agent: {message}", level=level
+        )
+        return {"accepted": True, "event_cursor": event["cursor"]}
+    reason = _string(arguments, "reason")
+    updated = store.transition(
+        job["job_id"],
+        "attention",
+        status="cancel_requested",
+        message=f"AI agent requested safe cancellation: {reason}",
+        resumability="safe_cleanup_only",
+        failure=reason,
+    )
+    return {"accepted": True, "status": updated["status"]}
+
+
+def _archive_tool(remnux: Remote) -> str:
+    for name in ("7z", "7zz"):
+        try:
+            path = remnux.run(("which", name), timeout=60).stdout.strip()
+        except TartarusError:
+            continue
+        if path:
+            return path
+    raise TartarusError(
+        "REMnux is missing a supported 7-Zip tool; install p7zip-full or rebuild the range"
+    )
 
 
 def _ghidra_post_script(
@@ -418,7 +554,7 @@ def _record_tool_result(
         "ok": error is None,
         "operation": operation,
         "data": {
-            "arguments": arguments,
+            "arguments": _redact_arguments(arguments),
             "result": value,
             "recorded_at": utc_now(),
             "evidence_path": relative_path,
@@ -446,6 +582,20 @@ def _string(arguments: dict[str, Any], key: str) -> str:
     if not isinstance(value, str) or not value:
         raise TartarusError(f"{key} must be a non-empty string")
     return value
+
+
+def _password(arguments: dict[str, Any]) -> str:
+    value = arguments.get("password")
+    if not isinstance(value, str) or len(value) > 1024:
+        raise TartarusError("archive password must be a string of at most 1024 characters")
+    return value
+
+
+def _redact_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: "<redacted>" if key in {"password", "archive_password"} else value
+        for key, value in arguments.items()
+    }
 
 
 def _string_list(arguments: dict[str, Any], key: str) -> list[str]:
@@ -480,8 +630,11 @@ def _current_run(evidence_root: Path, range_id: str, run_id: str) -> tuple[Path,
     if len(matches) != 1:
         raise TartarusError("current run manifest was not found")
     manifest = load_json(matches[0])
-    if manifest.get("range_id") != range_id or manifest.get("status") != "running":
-        raise TartarusError("analysis access requires the current running case")
+    if manifest.get("range_id") != range_id or manifest.get("status") not in {
+        "preparing",
+        "running",
+    }:
+        raise TartarusError("analysis access requires the current preparing or running case")
     return matches[0], manifest
 
 

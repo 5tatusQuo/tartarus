@@ -9,13 +9,19 @@ description = "Portable controller for a contained Ludus Linux malware-analysis 
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "fastapi==0.143.0",
+  "Jinja2==3.1.6",
+  "markdown-it-py==4.2.0",
   "platformdirs==4.12.4",
+  "PyJWT[crypto]==2.15.1",
   "PyYAML==6.0.3",
+  "python-multipart==0.0.32",
   "jsonschema==4.26.0",
+  "uvicorn==0.53.0",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest==8.4.2", "ruff==0.17.0"]
+dev = ["httpx==0.28.1", "pytest==8.4.2", "ruff==0.17.0"]
 
 [project.scripts]
 tartarus = "tartarus.cli:main"
@@ -24,6 +30,10 @@ tartarus-r2mcp = "tartarus.r2mcp_proxy:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["controller/tartarus"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"assets/tartarus-icon.png" = "tartarus/web/static/tartarus-icon.png"
+"schemas" = "tartarus/schemas"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

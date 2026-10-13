@@ -22,6 +22,7 @@ def start_remote_run(
     run_file: Path,
     duration: int,
     debug: bool = False,
+    sample_override: Path | None = None,
 ) -> dict[str, object]:
     from .verify import verify_range
 
@@ -45,7 +46,7 @@ def start_remote_run(
     safe_id(run["run_id"], "run ID")
     if not 1 <= duration <= 3600:
         raise TartarusError("duration must be between 1 and 3600 seconds")
-    sample = (
+    sample = sample_override or (
         config.evidence_root
         / run["case_id"]
         / "samples"
@@ -145,6 +146,145 @@ def start_remote_run(
             "telemetry_profile": run["telemetry_profile"],
         },
     )
+    return run
+
+
+def start_static_analysis_run(
+    config: Config,
+    range_id: str,
+    run_file: Path,
+    duration: int,
+    sample: Path,
+    elf: dict[str, Any],
+    readiness: dict[str, Any],
+) -> dict[str, object]:
+    """Stage an incompatible ELF for deep static analysis without sandbox execution."""
+    if not readiness["passed"]:
+        raise TartarusError("range readiness verification failed; sample was not staged")
+    if not 1 <= duration <= 3600:
+        raise TartarusError("duration must be between 1 and 3600 seconds")
+    if not sample.is_file():
+        raise TartarusError("controller sample is missing")
+    run = load_json(run_file)
+    verification_path = run_file.parent / "artifacts" / "verification" / "pre-run.json"
+    atomic_json(verification_path, readiness)
+    run["artifacts"].append(
+        {
+            "relative_path": verification_path.relative_to(run_file.parent).as_posix(),
+            "media_type": "application/json",
+            "size": verification_path.stat().st_size,
+            "collection_status": "collected",
+            "collected_at": utc_now(),
+        }
+    )
+    remnux = Remote(config, range_guests(config, range_id)["remnux"])
+    _stage(
+        remnux,
+        sample,
+        run["run_id"],
+        "/var/spool/tartarus/static",
+        owner=remnux.guest.user,
+        sample_mode="0400",
+    )
+    _static_analysis(remnux, run_file, run)
+    run.update(
+        status="running",
+        range_id=range_id,
+        debug_session=False,
+        execution_mode="static_only",
+        sample_architecture=(
+            f"ELF{elf['class']} {elf['endianness']}-endian machine {elf['machine']}"
+        ),
+        execution_limit_seconds=duration,
+        remote_started_at=utc_now(),
+    )
+    run["visibility_gaps"].append("dynamic_execution_unsupported_architecture")
+    validate("run-manifest", run)
+    atomic_json(run_file, run)
+    return run
+
+
+def cancel_pre_execution_run(config: Config, run_file: Path) -> dict[str, object]:
+    """Remove analysis-host staging after an agent cancels before execution."""
+    run = load_json(run_file)
+    if not run.get("range_id"):
+        raise TartarusError("run has no range context for cancellation cleanup")
+    remnux = Remote(config, range_guests(config, run["range_id"])["remnux"])
+    remnux.run(
+        (
+            "rm",
+            "-rf",
+            f"/var/spool/tartarus/static/{run['run_id']}",
+            f"/var/spool/tartarus/ghidra/{run['run_id']}",
+        ),
+        sudo=True,
+    )
+    run["status"] = "failed"
+    if "agent_cancelled_before_execution" not in run["visibility_gaps"]:
+        run["visibility_gaps"].append("agent_cancelled_before_execution")
+    validate("run-manifest", run)
+    atomic_json(run_file, run)
+    return run
+
+
+def stop_static_analysis_run(config: Config, run_file: Path) -> dict[str, object]:
+    """Collect REMnux evidence and verify containment for a static-only run."""
+    run = load_json(run_file)
+    if run.get("status") != "running" or run.get("execution_mode") != "static_only":
+        raise TartarusError("run is not an active static-only analysis")
+    run["status"] = "stopping"
+    atomic_json(run_file, run)
+    remnux = Remote(config, range_guests(config, run["range_id"])["remnux"])
+    gaps: list[str] = []
+    records: list[dict[str, object]] = []
+    ghidra_dir = f"/var/spool/tartarus/ghidra/{run['run_id']}"
+    if _remote_directory_exists(remnux, ghidra_dir):
+        try:
+            records.append(
+                _pull_directory(
+                    config,
+                    remnux,
+                    ghidra_dir,
+                    run_file.parent,
+                    "ghidra",
+                    run["run_id"],
+                )
+            )
+        except TartarusError:
+            gaps.append("ghidra_collection_failed")
+    try:
+        remnux.run(
+            (
+                "rm",
+                "-rf",
+                f"/var/spool/tartarus/static/{run['run_id']}",
+                ghidra_dir,
+            ),
+            sudo=True,
+        )
+    except TartarusError:
+        gaps.append("remnux_cleanup_failed")
+    from .verify import verify_range
+
+    verification = verify_range(config, run["range_id"])
+    latest = load_json(run_file)
+    known = {artifact["relative_path"] for artifact in run["artifacts"]}
+    run["artifacts"].extend(
+        artifact for artifact in latest["artifacts"] if artifact["relative_path"] not in known
+    )
+    run["artifacts"].extend(records)
+    run["stopped_at"] = utc_now()
+    run["recovery_verified"] = verification["passed"]
+    run["visibility_gaps"] = [
+        "dynamic_execution_unsupported_architecture",
+        *gaps,
+        *_visibility_gaps(run_file.parent),
+    ]
+    run["status"] = "collected_with_gaps"
+    validate("run-manifest", run)
+    atomic_json(run_file, run)
+    if not verification["passed"]:
+        raise TartarusError("range verification failed after static-only analysis")
     return run
 
 
@@ -388,6 +528,7 @@ def _stage(
     *,
     owner: str = "root",
     sample_mode: str = "0500",
+    destination_name: str = "sample",
 ) -> None:
     upload = f"/tmp/tartarus-{run_id}-sample"
     remote.push(sample, upload)
@@ -406,7 +547,7 @@ def _stage(
                 "-m",
                 sample_mode,
                 upload,
-                f"{root}/{run_id}/sample",
+                f"{root}/{run_id}/{destination_name}",
             ),
             sudo=True,
         )

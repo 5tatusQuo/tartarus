@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Report · {{ run.run_id }}{% endblock %}
+{% block content %}
+<header class="topbar"><div><span class="eyebrow">Threat analysis report</span><h1>{{ run.run_id }}</h1><p>{{ run.case_id }} · {{ run.sample_id }} · {{ run.artifact_count }} evidence artifacts</p></div><a class="button secondary" href="/runs/{{ run.case_id }}/{{ run.run_id }}">Back to run</a></header>
+<div class="report-shell">
+  <nav class="report-tabs" aria-label="Report sections"><button class="active" data-report-tab="report">Assessment</button><button data-report-tab="annex">Technical annex</button></nav>
+  <article class="card report-content markdown-body" data-report-panel="report">{{ report_html }}</article>
+  <article class="card report-content markdown-body hidden" data-report-panel="annex">{{ annex_html }}</article>
+</div>
+{% endblock %}

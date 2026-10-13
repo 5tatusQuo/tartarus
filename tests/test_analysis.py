@@ -3,9 +3,9 @@ import sys
 from pathlib import Path
 
 import pytest
-from tartarus.analysis import run_analysis_agent
+from tartarus.analysis import _analysis_prompt, _codex_failure_detail, run_analysis_agent
 from tartarus.errors import TartarusError
-from tartarus.manifest import create_case, create_run, stage_sample
+from tartarus.manifest import create_case, create_run, stage_sample, validate
 from tartarus.util import atomic_json, load_json
 
 
@@ -156,6 +156,22 @@ def test_analysis_agent_records_validated_complete_journal(tmp_path: Path) -> No
     assert any(item["relative_path"].endswith("codex.stdout.jsonl") for item in artifacts)
 
 
+def test_analysis_prompt_does_not_prejudge_sample_identity_or_compatibility(tmp_path: Path) -> None:
+    run_file = _running_run(tmp_path)
+    run = load_json(run_file)
+    run.update(
+        execution_mode="static_only",
+        sample_architecture="ELF32 little-endian machine 93",
+    )
+
+    prompt = _analysis_prompt(run, run_file.parent)
+
+    assert "machine 93" not in prompt
+    assert "static_only" not in prompt
+    assert "unsupported architecture" not in prompt
+    assert "No sample family" in prompt
+
+
 def test_analysis_agent_rejects_false_tool_usage_claim(tmp_path: Path) -> None:
     run_file = _running_run(tmp_path)
     config = tmp_path / "config.toml"
@@ -169,3 +185,26 @@ def test_analysis_agent_rejects_false_tool_usage_claim(tmp_path: Path) -> None:
             codex_executable=str(_fake_codex(tmp_path, journal)),
             config_path=config,
         )
+
+
+def test_archive_preparation_schema_is_accepted_by_strict_providers() -> None:
+    validate(
+        "archive-preparation",
+        {"prepared": True, "member": "payload.elf", "failure": None},
+    )
+    validate(
+        "archive-preparation",
+        {"prepared": False, "member": "", "failure": "archive listing failed"},
+    )
+
+
+def test_codex_failure_detail_extracts_nested_provider_message() -> None:
+    stdout = json.dumps(
+        {
+            "type": "error",
+            "error": {"message": "Invalid response schema: prepared requires a type."},
+        }
+    )
+    assert _codex_failure_detail(stdout, "fallback") == (
+        "Invalid response schema: prepared requires a type."
+    )

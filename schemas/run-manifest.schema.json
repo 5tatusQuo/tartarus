@@ -21,7 +21,9 @@
     "sandbox_rebuilt_at": {"type": "string", "format": "date-time"},
     "recovery_verified": {"type": "boolean"},
     "debug_session": {"type": "boolean"},
-    "status": {"enum": ["prepared", "starting", "running", "stopping", "collected", "collected_with_gaps", "failed"]},
+    "execution_mode": {"enum": ["native", "static_only"]},
+    "sample_architecture": {"type": "string", "minLength": 1},
+    "status": {"enum": ["prepared", "preparing", "starting", "running", "stopping", "collected", "collected_with_gaps", "failed"]},
     "started_at": {"type": "string", "format": "date-time"},
     "stopped_at": {"type": "string", "format": "date-time"},
     "artifacts": {

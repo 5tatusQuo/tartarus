@@ -871,6 +871,18 @@ def cmd_report_render(args: argparse.Namespace) -> None:
     emit(render_retained_report(run_file, handoff, output, replace=args.replace))
 
 
+def cmd_ui(args: argparse.Namespace) -> None:
+    if args.host not in {"127.0.0.1", "::1"} and not args.allow_remote:
+        raise TartarusError("the operator console binds to loopback unless --allow-remote is set")
+    try:
+        import uvicorn
+    except ImportError as exc:
+        raise TartarusError("operator console dependencies are not installed") from exc
+    from .web.app import create_app
+
+    uvicorn.run(create_app(), host=args.host, port=args.port, log_config=None)
+
+
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(prog="tartarus")
     root.add_argument("--version", action="version", version=__version__)
@@ -1025,6 +1037,11 @@ def parser() -> argparse.ArgumentParser:
     render.add_argument("--output")
     render.add_argument("--replace", action="store_true")
     render.set_defaults(func=cmd_report_render)
+    ui = commands.add_parser("ui")
+    ui.add_argument("--host", default="127.0.0.1")
+    ui.add_argument("--port", type=int, default=8741)
+    ui.add_argument("--allow-remote", action="store_true")
+    ui.set_defaults(func=cmd_ui)
     wireguard = commands.add_parser("wireguard")
     wg_actions = wireguard.add_subparsers(dest="wireguard_action", required=True)
     export = wg_actions.add_parser("export")

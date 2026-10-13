@@ -14,13 +14,13 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["sample_id", "original_name", "size", "staged_at", "media_type", "elf"],
+        "required": ["sample_id", "original_name", "size", "staged_at", "media_type"],
         "properties": {
           "sample_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
           "original_name": {"type": "string", "minLength": 1},
           "size": {"type": "integer", "minimum": 0},
           "staged_at": {"type": "string", "format": "date-time"},
-          "media_type": {"const": "application/x-elf"},
+          "media_type": {"enum": ["application/x-elf", "application/zip"]},
           "elf": {
             "type": "object",
             "additionalProperties": false,
@@ -31,6 +31,12 @@
               "type": {"type": "integer"},
               "machine": {"type": "integer"}
             }
+          },
+          "archive": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["format"],
+            "properties": {"format": {"const": "zip"}}
           }
         }
       }

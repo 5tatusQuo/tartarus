@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<header class="topbar"><div><span class="eyebrow">Controller configuration</span><h1>Settings</h1></div></header>
+<section class="settings-grid">
+  <article class="card account-card"><div class="card-heading"><span class="icon-box warm">✦</span><span class="pill {{ 'success' if chatgpt.connected else 'neutral' }}">{{ 'Connected' if chatgpt.connected else 'Not connected' }}</span></div><h2>ChatGPT</h2>{% if chatgpt.connected %}<p>Autonomous analysis uses <strong>{{ chatgpt.email }}</strong>.</p><p class="subtle">Tokens stay in owner-only controller storage and never enter browser storage.</p><button class="button danger-outline" data-disconnect-chatgpt>Disconnect account</button>{% else %}<p>Connect an eligible ChatGPT account to fuel analysis and reporting.</p><button class="button chatgpt" data-connect-chatgpt><span>✦</span> Continue with ChatGPT</button>{% endif %}</article>
+  <article class="card"><span class="eyebrow">Ludus controller</span><h2 data-ludus-status>Checking</h2><dl class="details"><div><dt>Identity</dt><dd data-ludus-identity>Checking in the background…</dd></div><div><dt>Profile</dt><dd>{{ config.profile }}</dd></div><div><dt>Transport</dt><dd>{{ config.remote_transport }}</dd></div></dl></article>
+  <article class="card full-span"><div class="section-title"><div><span class="eyebrow">Local storage</span><h2>Evidence stays on this controller</h2></div><button class="button secondary" data-run-diagnostics>Run controller diagnostics</button></div><dl class="details"><div><dt>Evidence root</dt><dd>{{ config.evidence_root }}</dd></div><div><dt>Cache root</dt><dd>{{ config.cache_root }}</dd></div><div><dt>Per-run quota</dt><dd>{{ config.artifact_quota_gib }} GiB</dd></div><div><dt>Manifest retention</dt><dd>{{ config.manifest_retention_days }} days</dd></div></dl><div class="range-result" data-diagnostics-result aria-live="polite"></div></article>
+</section>
+{% endblock %}

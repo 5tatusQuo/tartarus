@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Runs{% endblock %}
+{% block content %}
+<header class="topbar"><div><span class="eyebrow">Investigation archive</span><h1>Analysis runs</h1></div><a class="button primary" href="/analysis/new">New analysis</a></header>
+<section class="card table-card">
+  <div class="table-tools"><label class="search"><span>⌕</span><input type="search" placeholder="Filter by case, run, sample, or status" data-run-search></label><span>{{ runs|length }} total</span></div>
+  <div class="data-table" data-run-list>
+    <div class="table-head"><span>Run</span><span>Range</span><span>Started</span><span>Status</span><span></span></div>
+    {% for run in runs %}<a class="table-row" href="/runs/{{ run.case_id }}/{{ run.run_id }}" data-search="{{ run.case_id }} {{ run.run_id }} {{ run.sample_id }} {{ run.status }}">
+      <span><strong>{{ run.run_id }}</strong><small>{{ run.case_id }} · {{ run.sample_id }}</small></span><span>{{ run.range_id or 'Not started' }}</span><time>{{ run.started_at[:16]|replace('T',' ') }}</time><span><i class="status-dot {{ 'good' if run.status == 'collected' else 'warn' if run.status in ['running','starting','stopping'] else 'bad' }}"></i>{{ run.status|replace('_',' ') }}</span><span>›</span>
+    </a>{% else %}<div class="empty"><span>◎</span><h3>No runs found</h3></div>{% endfor %}
+  </div>
+</section>
+{% endblock %}

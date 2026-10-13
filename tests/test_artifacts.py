@@ -5,7 +5,11 @@ def test_all_artifacts_have_unique_names() -> None:
     artifacts = locked_artifacts()
     names = [item["filename"] for item in artifacts]
     assert len(names) == len(set(names))
-    assert {"elasticsearch-9.5.5-amd64.deb", "ghidra_11.4.2_PUBLIC_20250826.zip"} <= set(names)
+    assert {
+        "elasticsearch-9.5.5-amd64.deb",
+        "ghidra_11.4.2_PUBLIC_20250826.zip",
+        "arcompact-ARCompact.slaspec",
+    } <= set(names)
     for item in artifacts:
         assert ("role" in item) != ("destination" in item)
 
