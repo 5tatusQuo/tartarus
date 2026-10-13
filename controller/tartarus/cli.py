@@ -13,7 +13,7 @@ import yaml
 
 from . import __version__
 from .access import operator_access
-from .analysis import run_analysis_agent
+from .analysis import run_analysis_agent, run_yara_handoff_probe
 from .artifacts import acquire_artifacts, locked_artifacts
 from .bundle import create_bundle, verify_bundle
 from .config import Config, default_config_path, load_config, save_config
@@ -24,7 +24,8 @@ from .lifecycle import (
     assert_analysis_pair_ready,
     mark_analysis_pair_clean,
     pair_recovery_state,
-    rebuild_sandbox,
+    restore_analysis_snapshots,
+    run_yara_only,
     start_remote_run,
     stop_remote_run,
 )
@@ -652,7 +653,7 @@ def cmd_run_start(args: argparse.Namespace) -> None:
             "telemetry_profile": args.telemetry_profile,
             "duration_seconds": args.duration,
             "debug_session": args.debug,
-            "post_run_action": "collect evidence, destroy both analysis guests, redeploy and verify",
+            "post_run_action": "collect evidence, restore both analysis snapshots and verify",
         },
     )
     run = create_run(
@@ -665,6 +666,59 @@ def cmd_run_start(args: argparse.Namespace) -> None:
     )
     run_file = _run_file(config, args.case_id, run["run_id"])
     emit(start_remote_run(config, args.range_id, run_file, args.duration, args.debug))
+
+
+def cmd_run_yara(args: argparse.Namespace) -> None:
+    config = load_config()
+    assert_managed_range(config, args.range_id)
+    assert_analysis_pair_ready(config, args.range_id)
+    deployment = load_json(config.cache_root / "state" / "prepare-manifest.json")
+    if deployment.get("deployment", {}).get("range_id") != args.range_id:
+        raise TartarusError("selected range is not identified by the deployment manifest")
+    case = load_json(config.evidence_root / args.case_id / "case.json")
+    record = next(
+        (item for item in case["samples"] if item["sample_id"] == args.sample_id), None
+    )
+    if record is None:
+        raise TartarusError("sample is not present in the case manifest")
+    is_archive = record["media_type"] == "application/zip"
+    if args.archive_password is not None and not is_archive:
+        raise TartarusError("a ZIP password can only be supplied for a ZIP input")
+    approve(
+        args,
+        {
+            **operation_context(config, args.range_id),
+            "operation": "scan staged sample with bounded YARA-X without executing it",
+            "case_id": args.case_id,
+            "run_id": args.run_id or "generated",
+            "sample_id": args.sample_id,
+            "input_type": "zip" if is_archive else "elf",
+            "handoff_probe": args.handoff_probe,
+            "post_run_action": "collect scan evidence, restore and verify both analysis snapshots",
+        },
+    )
+    run = create_run(
+        config.evidence_root,
+        args.case_id,
+        args.sample_id,
+        "lightweight",
+        deployment["tartarus_release"],
+        args.run_id,
+    )
+    run_file = _run_file(config, args.case_id, run["run_id"])
+    sample = config.evidence_root / args.case_id / "samples" / args.sample_id / "sample.bin"
+    result = run_yara_only(
+        config,
+        args.range_id,
+        run_file,
+        sample,
+        verify_range(config, args.range_id),
+        archive_password=args.archive_password if is_archive else None,
+    )
+    response: dict[str, object] = {"run": result}
+    if args.handoff_probe:
+        response["handoff_probe"] = run_yara_handoff_probe(run_file, model=args.model)
+    emit(response)
 
 
 def _run_file(config: Config, case_id: str, run_id: str) -> Path:
@@ -735,7 +789,7 @@ def cmd_run_stop(args: argparse.Namespace) -> None:
         args,
         {
             **operation_context(config, run_manifest.get("range_id")),
-            "operation": "stop run, collect evidence, generate report, destroy and rebuild the analysis pair",
+            "operation": "stop run, collect evidence, generate report, and restore both analysis snapshots",
             "case_id": args.case_id,
             "run_id": args.run_id,
             "quota_override": args.approve_quota_override,
@@ -786,21 +840,10 @@ def cmd_telemetry(args: argparse.Namespace) -> None:
         emit(telemetry_search(config, args.range_id, args.query, args.size))
 
 
-def cmd_sandbox_rebuild(args: argparse.Namespace) -> None:
+def cmd_snapshot_restore(args: argparse.Namespace) -> None:
     config = load_config()
     assert_managed_range(config, args.range_id)
-    guests = range_guests(config, args.range_id)
-    approve(
-        args,
-        {
-            **operation_context(config, args.range_id),
-            "vms": [guests[role].name for role in ("remnux", "sandbox")],
-            "vmids": [guests[role].vmid for role in ("remnux", "sandbox")],
-            "operation": "destroy and redeploy the disposable analysis pair",
-        },
-        destructive=True,
-    )
-    report = rebuild_sandbox(config, args.range_id, wait_seconds=args.wait_seconds)
+    report = restore_analysis_snapshots(config, args.range_id, wait_seconds=args.wait_seconds)
     emit(
         {
             "verification": report,
@@ -980,6 +1023,16 @@ def parser() -> argparse.ArgumentParser:
     start.add_argument("--yes", action="store_true")
     start.add_argument("--telemetry-profile", default="standard")
     start.set_defaults(func=cmd_run_start)
+    yara = run_actions.add_parser("yara")
+    yara.add_argument("--case-id", required=True)
+    yara.add_argument("--sample-id", required=True)
+    yara.add_argument("--run-id")
+    yara.add_argument("--range-id", required=True)
+    yara.add_argument("--archive-password")
+    yara.add_argument("--handoff-probe", action="store_true")
+    yara.add_argument("--model")
+    yara.add_argument("--yes", action="store_true")
+    yara.set_defaults(func=cmd_run_yara)
     collect = run_actions.add_parser("collect")
     collect.add_argument("--case-id", required=True)
     collect.add_argument("--run-id", required=True)
@@ -1027,14 +1080,12 @@ def parser() -> argparse.ArgumentParser:
     credentials_show = credential_actions.add_parser("show")
     credentials_show.add_argument("--range-id", required=True)
     credentials_show.set_defaults(func=cmd_credentials)
-    sandbox = commands.add_parser("sandbox")
-    sandbox_actions = sandbox.add_subparsers(dest="sandbox_action", required=True)
-    rebuild = sandbox_actions.add_parser("rebuild")
-    rebuild.add_argument("--range-id", required=True)
-    rebuild.add_argument("--confirm", action="store_true")
-    rebuild.add_argument("--wait-seconds", type=int, default=1800)
-    rebuild.add_argument("--host-memory-gib", type=float)
-    rebuild.set_defaults(func=cmd_sandbox_rebuild)
+    snapshots = commands.add_parser("snapshots")
+    snapshot_actions = snapshots.add_subparsers(dest="snapshot_action", required=True)
+    restore = snapshot_actions.add_parser("restore")
+    restore.add_argument("--range-id", required=True)
+    restore.add_argument("--wait-seconds", type=int, default=1800)
+    restore.set_defaults(func=cmd_snapshot_restore)
     report = commands.add_parser("report")
     report_actions = report.add_subparsers(dest="report_action", required=True)
     generate = report_actions.add_parser("generate")

@@ -12,7 +12,7 @@ from tartarus.lifecycle import (
     _visibility_gaps,
     assert_analysis_pair_ready,
     mark_analysis_pair_tainted,
-    rebuild_sandbox,
+    restore_analysis_snapshots,
 )
 from tartarus.ludus import CommandResult
 from tartarus.remote import Guest
@@ -48,7 +48,7 @@ def test_quota_and_evidence_archive_fail_closed(tmp_path: Path) -> None:
         _safe_extract(archive, tmp_path / "output")
 
 
-def test_pair_recovery_destroys_both_guests_before_stopping_testing(
+def test_pair_recovery_restores_both_snapshots(
     tmp_path: Path, monkeypatch
 ) -> None:
     config = Config(
@@ -63,15 +63,8 @@ def test_pair_recovery_destroys_both_guests_before_stopping_testing(
         "tartarus.lifecycle.range_guests",
         lambda *_: {"remnux": remnux, "sandbox": sandbox},
     )
-    statuses = iter(
-        (
-            {"rangeState": "SUCCESS", "testingEnabled": True},
-            {"rangeState": "SUCCESS", "testingEnabled": False},
-            {"rangeState": "SUCCESS", "testingEnabled": False},
-        )
-    )
+    statuses = iter(({"rangeState": "SUCCESS", "testingEnabled": True},))
     calls: list[tuple[str, ...]] = []
-
     def fake_ludus(arguments, **_kwargs):
         command = tuple(arguments)
         calls.append(command)
@@ -79,15 +72,16 @@ def test_pair_recovery_destroys_both_guests_before_stopping_testing(
         return CommandResult(("ludus", *command), stdout, "", 0)
 
     monkeypatch.setattr("tartarus.lifecycle.run_ludus", fake_ludus)
-    monkeypatch.setattr("tartarus.lifecycle.time.sleep", lambda _seconds: None)
+    monkeypatch.setattr(
+        "tartarus.lifecycle._wait_for_snapshot_guests",
+        lambda *_: {"remnux": remnux, "sandbox": sandbox},
+    )
     monkeypatch.setattr("tartarus.verify.verify_range", lambda *_: {"passed": True})
 
-    assert rebuild_sandbox(config, "T1", wait_seconds=1) == {"passed": True}
+    assert restore_analysis_snapshots(config, "T1", wait_seconds=1) == {"passed": True}
     testing_stop = calls.index(("--range", "T1", "testing", "stop"))
-    assert calls.index(("--range", "T1", "vm", "destroy", "102", "--no-prompt")) < testing_stop
-    assert calls.index(("--range", "T1", "vm", "destroy", "103", "--no-prompt")) < testing_stop
-    assert ("--range", "T1", "range", "deploy", "--force") in calls
-    assert not any("--limit" in command for command in calls)
+    testing_start = calls.index(("--range", "T1", "testing", "start"))
+    assert testing_stop < testing_start
     assert ("--range", "T1", "testing", "start") in calls
 
 
@@ -158,12 +152,12 @@ def test_pair_recovery_failure_quarantines_the_range(tmp_path: Path, monkeypatch
                 "",
                 0,
             )
-        raise TartarusError("destroy failed")
+        raise TartarusError("snapshot restore failed")
 
     monkeypatch.setattr("tartarus.lifecycle.run_ludus", fake_ludus)
 
-    with pytest.raises(TartarusError, match="destroy failed"):
-        rebuild_sandbox(config, "T1", wait_seconds=1)
+    with pytest.raises(TartarusError, match="snapshot restore failed"):
+        restore_analysis_snapshots(config, "T1", wait_seconds=1)
     state = json.loads(
         (tmp_path / "state" / "ranges" / "T1-analysis-pair.json").read_text()
     )

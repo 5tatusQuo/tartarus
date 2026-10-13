@@ -7,7 +7,7 @@ import json
 import secrets
 import urllib.parse
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import (
@@ -42,6 +42,8 @@ class WorkflowRequest(BaseModel):
     telemetry_profile: str = "deep"
     duration: int = Field(default=300, ge=1, le=3600)
     archive_password: str | None = Field(default=None, max_length=1024)
+    mode: Literal["analysis", "yara_only"] = "analysis"
+    handoff_probe: bool = False
 
 
 class ApprovalBody(BaseModel):
@@ -50,10 +52,6 @@ class ApprovalBody(BaseModel):
 
 class CaseBody(BaseModel):
     case_id: str | None = None
-
-
-class RebuildBody(BaseModel):
-    confirmation: str
 
 
 def create_app(config: Config | None = None) -> FastAPI:
@@ -240,11 +238,9 @@ def create_app(config: Config | None = None) -> FastAPI:
     async def api_verify(range_id: str):
         return await asyncio.to_thread(service.verify, range_id)
 
-    @app.post("/api/ranges/{range_id}/rebuild")
-    async def api_rebuild(range_id: str, body: RebuildBody):
-        if body.confirmation != range_id:
-            raise HTTPException(400, "type the range ID to confirm analysis-pair rebuild")
-        return await asyncio.to_thread(service.rebuild, range_id)
+    @app.post("/api/ranges/{range_id}/snapshots/restore")
+    async def api_restore_snapshots(range_id: str):
+        return await asyncio.to_thread(service.restore_snapshots, range_id)
 
     @app.get("/api/cases")
     async def api_cases():

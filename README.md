@@ -154,7 +154,7 @@ Ludus manages the Proxmox credentials and the WireGuard configuration.
 
 Commands that change state show their resolved scope.
 Use `--yes` to approve a high-impact change or sample execution.
-Use `--confirm` to approve permanent range removal or a manual analysis-pair rebuild.
+Use `--confirm` to approve permanent range removal.
 
 The `prepare` command creates a temporary source upload.
 It adds the operator CIDR values to that upload.
@@ -207,6 +207,40 @@ browser storage, logs, reports, or run evidence.
      --yes
    ```
 
+   Tartarus runs a bounded YARA-X scan on REMnux before radare2, Ghidra, sample execution, or the
+   analysis agent. It uses the deterministic Tartarus ELF pack: 376 public rules and three required
+   private dependencies selected from the pinned YARA Forge Full release. Rules must have source
+   quality of at least 70 and an explicit ELF header, ELF module, or ELF-guard dependency. Rule
+   names and descriptions never qualify a rule by themselves. The normalized
+   `artifacts/yara/scan.json` and `artifacts/yara/ruleset-manifest.json` evidence is retained and
+   supplied to the agent as untrusted analysis leads. A scanner timeout or error stops the workflow.
+
+   To test scanning without sample execution, static deep analysis, reporting, or a full AI run:
+
+   ```bash
+   tartarus run yara \
+     --range-id <range-id> \
+     --case-id demo \
+     --sample-id <sample-id> \
+     --archive-password infected \
+     --handoff-probe \
+     --yes
+   ```
+
+   Omit `--archive-password` for a direct ELF. Omit `--handoff-probe` for a scanner-only run with no
+   model call. The optional probe uses low reasoning, no MCP servers, a short timeout, and only the
+   normalized YARA context. It checks that the future analysis agent can receive the result without
+   performing analysis or generating a report.
+
+   YARA-only runs still restore and verify clean snapshots for REMnux and the sandbox after staging.
+   This is the common recovery boundary for any run that places sample bytes on an analysis guest.
+
+   YARA Forge Core and Extended are not installed because both are subsets of Full. To update the
+   upstream release, change its pinned version and artifact, generate the pack, review the selected
+   rule and logic-hash diff, compile it with the pinned YARA-X, and update the golden count only
+   after that review. Weekly upstream releases are never promoted automatically. Format-neutral
+   rules require an explicit `id` and `logic_hash` entry in `tartarus-yara-overrides.json`.
+
 4. Run the autonomous analysis agent.
 
    Run the autonomous analysis agent before stopping a debug run:
@@ -246,13 +280,13 @@ The stop operation completes the packet capture and bounded traces.
 It transfers the evidence to controller-owned storage.
 It checks that each transferred file arrived with the expected size.
 
-The operation then destroys and redeploys both REMnux and the sandbox.
-It runs the live verification suite on both replacement analysis guests.
+The operation then restores clean snapshots for both REMnux and the sandbox.
+It re-enables testing containment and runs the live verification suite on both analysis guests.
 Tartarus does not accept a new run until recovery verification passes.
 
-Ranges created before analysis-pair recovery have no valid pair-recovery record. Migrate one
-before the next sample with `tartarus sandbox rebuild --range-id <range-id> --confirm`. The command
-name remains for compatibility, but it destroys and redeploys both REMnux and the sandbox.
+Ranges created before analysis-pair recovery have no valid pair-recovery record. Initialize one
+before the next sample with `tartarus snapshots restore --range-id <range-id>`. This restores and
+verifies both clean analysis snapshots without an operator confirmation step.
 
 The controller does not give a guest write access to the evidence root.
 

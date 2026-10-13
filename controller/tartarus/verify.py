@@ -151,6 +151,7 @@ def verify_range(
         lambda: _reverse_engineering_versions_ok(remnux),
     )
     _check(checks, "static_analysis_fixture", lambda: _verify_static_analysis(remnux))
+    _check(checks, "bounded_yara_scan", lambda: _verify_yara(remnux))
     _check(checks, "telemetry_search_latency", lambda: _verify_search(config, range_id, sandbox))
     for role, remote in (("elk", elk), ("remnux", remnux), ("sandbox", sandbox)):
         _check(checks, f"{role}_audit_no_loss", lambda remote=remote: _audit_ok(remote))
@@ -175,6 +176,29 @@ def _check(checks: list[dict[str, Any]], name: str, operation: Callable[[], bool
         checks.append({"name": name, "status": "pass" if passed else "fail"})
     except Exception as exc:  # noqa: BLE001 - preserve all independent probe results
         checks.append({"name": name, "status": "fail", "detail": str(exc)})
+
+
+def _verify_yara(remote: Remote) -> bool:
+    envelope = json.loads(
+        remote.run(("/usr/local/sbin/tartarus-yara-scan", "/bin/true"), timeout=140).stdout
+    )
+    manifest = envelope.get("ruleset_manifest")
+    return (
+        envelope.get("engine_version") == "1.21.0"
+        and isinstance(manifest, dict)
+        and manifest.get("name") == "Tartarus ELF"
+        and manifest.get("version") == "20261011+tartarus-elf-v1"
+        and manifest.get("selection_policy") == "tartarus-elf-v1"
+        and manifest.get("counts", {}).get("public") == 376
+        and manifest.get("counts", {}).get("private") == 3
+        and manifest.get("counts", {}).get("compiled") == 379
+        and envelope.get("returncode") == 0
+        and envelope.get("timed_out") is False
+        and isinstance(envelope.get("peak_rss_kib"), int)
+        and envelope["peak_rss_kib"] <= 256 * 1024
+        and isinstance(envelope.get("elapsed_seconds"), (int, float))
+        and envelope["elapsed_seconds"] <= 10
+    )
 
 
 def _expect_failure(remote: Remote, command: tuple[str, ...]) -> bool:
@@ -251,9 +275,16 @@ def _analysis_guest_clean(remote: Remote, role: str) -> bool:
             "/var/spool/tartarus/recovery",
         )
     )
-    stale = remote.run(
-        ("find", *roots, "-mindepth", "1", "-print", "-quit"), sudo=True
-    ).stdout
+    existing_roots = tuple(
+        root for root in roots if not _expect_failure(remote, ("test", "-d", root))
+    )
+    stale = (
+        remote.run(
+            ("find", *existing_roots, "-mindepth", "1", "-print", "-quit"), sudo=True
+        ).stdout
+        if existing_roots
+        else ""
+    )
     process_names = (
         ("pgrep", "-u", "tartarus-runner")
         if role == "sandbox"

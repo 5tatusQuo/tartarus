@@ -193,6 +193,50 @@ def test_archive_password_is_only_held_in_transient_workflow_memory(
     assert job["approval"]["scope"]["archive_password_provided"] is True
 
 
+def test_yara_only_workflow_without_probe_does_not_require_chatgpt(
+    tmp_path: Path, monkeypatch
+) -> None:
+    config = _config(tmp_path)
+    create_case(config.evidence_root, "case-1")
+    sample_path = tmp_path / "fixture.elf"
+    sample_path.write_bytes(_elf())
+    sample = stage_sample(config.evidence_root, "case-1", sample_path)
+    service = ConsoleService(config, JobStore(config.cache_root), ChatGPTAuth(config.cache_root))
+    service.auth.status = lambda: {"connected": False, "plan_usage": False}
+    service._assert_managed = lambda _range_id: None
+    monkeypatch.setattr(
+        "tartarus.web.service.assert_analysis_pair_ready",
+        lambda *_args, **_kwargs: {
+            "state": "clean",
+            "phase": "verified",
+            "guests": {
+                "remnux": {"status": "verified"},
+                "sandbox": {"status": "verified"},
+            },
+            "failure": None,
+        },
+    )
+    state = config.cache_root / "state"
+    state.mkdir()
+    (state / "prepare-manifest.json").write_text(
+        json.dumps({"tartarus_release": "test", "deployment": {"range_id": "range-1"}}),
+        encoding="utf-8",
+    )
+
+    job, _token = service.prepare_workflow(
+        range_id="range-1",
+        case_id="case-1",
+        sample_id=sample["sample_id"],
+        telemetry_profile="lightweight",
+        duration=300,
+        mode="yara_only",
+        handoff_probe=False,
+    )
+
+    assert job["approval"]["scope"]["mode"] == "yara_only"
+    assert job["approval"]["scope"]["handoff_probe"] is False
+
+
 def test_chatgpt_authorization_uses_pkce_and_rejects_state_mismatch(tmp_path: Path) -> None:
     auth = ChatGPTAuth(tmp_path)
     url = auth.begin("http://127.0.0.1:8741/auth/chatgpt/callback")

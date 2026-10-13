@@ -1,0 +1,115 @@
+#!/usr/bin/python3
+"""Bounded YARA-X launcher. Its stdout is a small JSON envelope for the controller."""
+
+import json
+import os
+import resource
+import subprocess
+import sys
+import threading
+import time
+
+ENGINE_VERSION = "1.21.0"
+RULES = "/opt/tartarus/yara-forge-20261011/tartarus-elf.yarc"
+MANIFEST = "/opt/tartarus/yara-forge-20261011/tartarus-elf-manifest.json"
+MAX_STDOUT = 8 * 1024 * 1024
+MAX_STDERR = 64 * 1024
+
+
+def constrained():
+    os.setsid()
+    resource.setrlimit(resource.RLIMIT_AS, (1024**3, 1024**3))
+    os.nice(10)
+
+
+def drain(stream, limit, output, state):
+    while True:
+        chunk = stream.read(65536)
+        if not chunk:
+            return
+        remaining = limit - len(output)
+        if remaining > 0:
+            output.extend(chunk[:remaining])
+        if len(chunk) > remaining:
+            state["truncated"] = True
+
+
+def main():
+    if len(sys.argv) != 2:
+        raise SystemExit("usage: tartarus-yara-scan SAMPLE")
+    started = time.monotonic()
+    try:
+        with open(MANIFEST, encoding="utf-8") as stream:
+            manifest = json.load(stream)
+        counts = manifest["counts"]
+        if (
+            manifest["name"] != "Tartarus ELF"
+            or manifest["selection_policy"] != "tartarus-elf-v1"
+            or not isinstance(counts["compiled"], int)
+            or counts["compiled"] < 1
+        ):
+            raise ValueError("unexpected pack identity or rule count")
+    except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
+        print(json.dumps({
+            "engine_version": ENGINE_VERSION,
+            "ruleset_manifest": None,
+            "returncode": 127,
+            "timed_out": False,
+            "elapsed_seconds": round(time.monotonic() - started, 6),
+            "peak_rss_kib": 0,
+            "stdout": "",
+            "stderr": f"Tartarus ELF manifest is invalid: {exc}",
+            "truncated": False,
+        }))
+        return
+    command = [
+        "/usr/local/bin/yr", "scan", "--compiled-rules", "--threads", "1",
+        "--timeout", "120", "--output-format", "json", "--print-meta",
+        "--print-tags", "--print-namespace", "--print-strings=64",
+        "--max-matches-per-pattern", "20", RULES, sys.argv[1],
+    ]
+    timed_out = False
+    returncode = None
+    stdout = bytearray()
+    stderr = bytearray()
+    state = {"truncated": False}
+    try:
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            preexec_fn=constrained,  # noqa: PLW1509 - limits must apply before YARA-X starts
+        )
+        readers = [
+            threading.Thread(target=drain, args=(process.stdout, MAX_STDOUT, stdout, state)),
+            threading.Thread(target=drain, args=(process.stderr, MAX_STDERR, stderr, state)),
+        ]
+        for reader in readers:
+            reader.start()
+        try:
+            returncode = process.wait(timeout=125)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            os.killpg(process.pid, 9)
+            process.wait()
+        for reader in readers:
+            reader.join()
+    except OSError as exc:
+        stderr.extend(str(exc).encode("utf-8", "replace")[:MAX_STDERR])
+        returncode = 127
+    usage = resource.getrusage(resource.RUSAGE_CHILDREN)
+    print(json.dumps({
+        "engine_version": ENGINE_VERSION,
+        "ruleset_manifest": manifest,
+        "returncode": returncode,
+        "timed_out": timed_out,
+        "elapsed_seconds": round(time.monotonic() - started, 6),
+        "peak_rss_kib": max(0, int(usage.ru_maxrss)),
+        "stdout": stdout.decode("utf-8", "replace"),
+        "stderr": stderr.decode("utf-8", "replace"),
+        "truncated": state["truncated"],
+    }))
+
+
+if __name__ == "__main__":
+    main()

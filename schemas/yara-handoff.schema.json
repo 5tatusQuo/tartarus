@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tartarus.invalid/schemas/yara-handoff.schema.json",
+  "title": "YaraHandoff",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "sample_id", "yara_artifact", "match_count", "observed_rule_ids", "summary", "analysis_leads", "full_analysis_performed"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "sample_id": {"type": "string", "minLength": 1},
+    "yara_artifact": {"type": "string", "pattern": "^artifacts/yara/"},
+    "match_count": {"type": "integer", "minimum": 0},
+    "observed_rule_ids": {"type": "array", "items": {"type": "string"}, "maxItems": 100},
+    "summary": {"type": "string", "minLength": 1, "maxLength": 1000},
+    "analysis_leads": {"type": "array", "items": {"type": "string", "maxLength": 500}, "maxItems": 10},
+    "full_analysis_performed": {"const": false}
+  }
+}

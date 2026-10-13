@@ -1,0 +1,291 @@
+#!/usr/bin/python3
+"""Build the deterministic Tartarus ELF rule pack from YARA Forge Full."""
+
+from __future__ import annotations
+
+import argparse
+import copy
+import json
+import re
+from collections import Counter
+from pathlib import Path
+from typing import Any
+
+import plyara
+from plyara.utils import rebuild_yara_rule
+
+PACK_NAME = "Tartarus ELF"
+POLICY_VERSION = "tartarus-elf-v1"
+UPSTREAM_NAME = "YARA Forge Full"
+ELF_HEADER = re.compile(
+    r"(?:"
+    r"uint32\s*\(\s*0\s*\)\s*==\s*0x464c457f|"
+    r"uint32be\s*\(\s*0\s*\)\s*==\s*0x7f454c46|"
+    r"uint16\s*\(\s*0\s*\)\s*==\s*0x457f"
+    r")",
+    re.IGNORECASE,
+)
+ELF_MAGIC = re.compile(r"7f\s+45\s+4c\s+46", re.IGNORECASE)
+
+
+class PackError(ValueError):
+    """The upstream package or selection configuration is invalid."""
+
+
+def metadata(rule: dict[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for item in rule.get("metadata", []):
+        result.update(item)
+    return result
+
+
+def dependencies(rule: dict[str, Any], rule_names: set[str]) -> set[str]:
+    return {
+        token
+        for token in rule.get("condition_terms", [])
+        if token in rule_names and token != rule["rule_name"]
+    }
+
+
+def direct_elf_reason(rule: dict[str, Any]) -> str | None:
+    condition = rule.get("raw_condition", "")
+    if re.search(r"\belf\s*\.", condition, re.IGNORECASE):
+        return "elf_module"
+    if ELF_HEADER.search(condition):
+        return "elf_header"
+    for string in rule.get("strings", []):
+        identifier = string.get("name")
+        value = string.get("value", "")
+        if (
+            isinstance(identifier, str)
+            and isinstance(value, str)
+            and ELF_MAGIC.search(value)
+            and re.search(rf"{re.escape(identifier)}\s+at\s+0\b", condition)
+        ):
+            return "elf_magic_at_zero"
+    return None
+
+
+def _load_overrides(
+    path: Path, rules_by_identity: dict[tuple[str, str], dict[str, Any]]
+) -> tuple[set[str], set[str], int]:
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PackError(f"invalid override file: {path}") from exc
+    if document.get("schema_version") != "1.0" or document.get("selection_policy") != POLICY_VERSION:
+        raise PackError("override schema or selection policy does not match the generator")
+    minimum_quality = document.get("minimum_quality")
+    if not isinstance(minimum_quality, int) or not 0 <= minimum_quality <= 100:
+        raise PackError("minimum_quality must be an integer from 0 through 100")
+    resolved: dict[str, set[str]] = {}
+    for group in ("allow", "deny"):
+        entries = document.get(group)
+        if not isinstance(entries, list):
+            raise PackError(f"override {group} must be a list")
+        selected: set[str] = set()
+        for entry in entries:
+            if not isinstance(entry, dict) or set(entry) != {"id", "logic_hash"}:
+                raise PackError(f"override {group} entries require only id and logic_hash")
+            identifier = entry["id"]
+            logic_hash = entry["logic_hash"]
+            rule = rules_by_identity.get((identifier, logic_hash))
+            if rule is None:
+                if any(key[0] == identifier for key in rules_by_identity):
+                    raise PackError(f"override logic hash changed for rule id: {identifier}")
+                raise PackError(f"override references unknown rule id: {identifier}")
+            if "private" in rule.get("scopes", []):
+                raise PackError(f"override cannot select a private rule directly: {identifier}")
+            selected.add(rule["rule_name"])
+        resolved[group] = selected
+    overlap = resolved["allow"] & resolved["deny"]
+    if overlap:
+        raise PackError(f"rules cannot be both allowed and denied: {', '.join(sorted(overlap))}")
+    return resolved["allow"], resolved["deny"], minimum_quality
+
+
+def _ordered_rules(
+    selected: set[str], rules_by_name: dict[str, dict[str, Any]], dependency_map: dict[str, set[str]]
+) -> list[dict[str, Any]]:
+    ordered: list[dict[str, Any]] = []
+    permanent: set[str] = set()
+    temporary: set[str] = set()
+
+    def visit(name: str) -> None:
+        if name in permanent:
+            return
+        if name in temporary:
+            raise PackError(f"cyclic rule dependency includes: {name}")
+        temporary.add(name)
+        for dependency in sorted(dependency_map[name]):
+            if dependency not in selected:
+                raise PackError(f"selected rule {name} is missing dependency {dependency}")
+            visit(dependency)
+        temporary.remove(name)
+        permanent.add(name)
+        ordered.append(rules_by_name[name])
+
+    for name in sorted(selected):
+        visit(name)
+    return ordered
+
+
+def build_pack(
+    source: Path,
+    overrides: Path,
+    output: Path,
+    manifest_path: Path,
+    upstream_version: str,
+) -> dict[str, Any]:
+    parser = plyara.Plyara()
+    try:
+        rules = parser.parse_string(source.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise PackError("YARA Forge Full could not be parsed") from exc
+    if not rules:
+        raise PackError("YARA Forge Full contains no rules")
+    names = [rule["rule_name"] for rule in rules]
+    duplicates = sorted(name for name, count in Counter(names).items() if count > 1)
+    if duplicates:
+        raise PackError(f"duplicate rule identifiers: {', '.join(duplicates[:10])}")
+    rules_by_name = {rule["rule_name"]: rule for rule in rules}
+    rule_names = set(rules_by_name)
+    dependency_map = {name: dependencies(rule, rule_names) for name, rule in rules_by_name.items()}
+    rules_by_identity: dict[tuple[str, str], dict[str, Any]] = {}
+    for rule in rules:
+        details = metadata(rule)
+        identifier = details.get("id")
+        logic_hash = details.get("logic_hash")
+        if isinstance(identifier, str) and isinstance(logic_hash, str):
+            identity = (identifier, logic_hash)
+            if identity in rules_by_identity:
+                raise PackError(f"duplicate YARA Forge rule identity: {identifier}/{logic_hash}")
+            rules_by_identity[identity] = rule
+    allow, deny, minimum_quality = _load_overrides(overrides, rules_by_identity)
+
+    reasons = {
+        rule["rule_name"]: reason
+        for rule in rules
+        if (reason := direct_elf_reason(rule)) is not None
+    }
+    changed = True
+    while changed:
+        changed = False
+        for rule in rules:
+            name = rule["rule_name"]
+            if name in reasons:
+                continue
+            guarded_dependencies = sorted(dependency_map[name] & reasons.keys())
+            if guarded_dependencies:
+                reasons[name] = f"elf_dependency:{guarded_dependencies[0]}"
+                changed = True
+
+    public_selected: set[str] = set()
+    exclusion_counts: Counter[str] = Counter()
+    for rule in rules:
+        name = rule["rule_name"]
+        if "private" in rule.get("scopes", []):
+            continue
+        quality = metadata(rule).get("quality")
+        if name in deny:
+            exclusion_counts["denied"] += 1
+        elif name in allow:
+            public_selected.add(name)
+            reasons[name] = "reviewed_allowlist"
+        elif not isinstance(quality, int) or quality < minimum_quality:
+            exclusion_counts["quality_below_minimum"] += 1
+        elif name not in reasons:
+            exclusion_counts["no_explicit_elf_guard"] += 1
+        else:
+            public_selected.add(name)
+
+    selected = set(public_selected)
+    pending = list(public_selected)
+    while pending:
+        name = pending.pop()
+        for dependency in dependency_map[name]:
+            if dependency not in selected:
+                selected.add(dependency)
+                pending.append(dependency)
+                reasons.setdefault(dependency, f"required_dependency:{name}")
+    exclusion_counts["private_not_required"] = sum(
+        "private" in rule.get("scopes", []) and rule["rule_name"] not in selected
+        for rule in rules
+    )
+    ordered = _ordered_rules(selected, rules_by_name, dependency_map)
+    imports = sorted({item for rule in ordered for item in rule.get("imports", [])})
+    rule_texts = []
+    manifest_rules = []
+    for rule in ordered:
+        rendered = copy.deepcopy(rule)
+        rendered.pop("imports", None)
+        rule_texts.append(rebuild_yara_rule(rendered))
+        details = metadata(rule)
+        manifest_rules.append(
+            {
+                "identifier": rule["rule_name"],
+                "id": details.get("id"),
+                "logic_hash": details.get("logic_hash"),
+                "source_url": details.get("source_url"),
+                "quality": details.get("quality"),
+                "private": "private" in rule.get("scopes", []),
+                "inclusion_reason": reasons[rule["rule_name"]],
+                "dependencies": sorted(dependency_map[rule["rule_name"]]),
+            }
+        )
+    version = f"{upstream_version}+{POLICY_VERSION}"
+    header = [
+        "/* Generated by Tartarus. Do not edit. */",
+        f"/* Upstream: {UPSTREAM_NAME} {upstream_version}; policy: {POLICY_VERSION}. */",
+        *(f'import "{name}"' for name in imports),
+        "",
+    ]
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text("\n".join(header) + "\n".join(rule_texts), encoding="utf-8")
+    private_count = sum(item["private"] for item in manifest_rules)
+    manifest = {
+        "schema_version": "1.0",
+        "name": PACK_NAME,
+        "version": version,
+        "selection_policy": POLICY_VERSION,
+        "upstream": {"name": UPSTREAM_NAME, "version": upstream_version},
+        "minimum_quality": minimum_quality,
+        "counts": {
+            "upstream": len(rules),
+            "public": len(manifest_rules) - private_count,
+            "private": private_count,
+            "compiled": len(manifest_rules),
+            "excluded": len(rules) - len(manifest_rules),
+        },
+        "imports": imports,
+        "exclusion_counts": dict(sorted(exclusion_counts.items())),
+        "rules": manifest_rules,
+    }
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return manifest
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--source", type=Path, required=True)
+    parser.add_argument("--overrides", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--manifest", type=Path, required=True)
+    parser.add_argument("--upstream-version", required=True)
+    arguments = parser.parse_args()
+    try:
+        manifest = build_pack(
+            arguments.source,
+            arguments.overrides,
+            arguments.output,
+            arguments.manifest,
+            arguments.upstream_version,
+        )
+    except PackError as exc:
+        parser.error(str(exc))
+    print(json.dumps(manifest["counts"], sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()

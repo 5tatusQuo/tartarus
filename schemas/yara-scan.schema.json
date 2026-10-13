@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tartarus.invalid/schemas/yara-scan.schema.json",
+  "title": "YaraScan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "case_id", "run_id", "sample_id", "status", "engine", "ruleset", "started_at", "finished_at", "elapsed_seconds", "peak_rss_kib", "exit_status", "match_count", "matches", "warnings", "error", "truncated"],
+  "properties": {
+    "schema_version": {"const": "1.1"},
+    "case_id": {"type": "string", "minLength": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "sample_id": {"type": "string", "minLength": 1},
+    "status": {"enum": ["complete", "failed", "timed_out"]},
+    "engine": {
+      "type": "object", "additionalProperties": false, "required": ["name", "version"],
+      "properties": {"name": {"const": "YARA-X"}, "version": {"type": "string", "minLength": 1}}
+    },
+    "ruleset": {
+      "type": "object", "additionalProperties": false, "required": ["name", "version", "selection_policy", "upstream", "rule_count", "public_rule_count", "private_rule_count", "manifest_artifact"],
+      "properties": {
+        "name": {"const": "Tartarus ELF"},
+        "version": {"type": "string", "minLength": 1},
+        "selection_policy": {"const": "tartarus-elf-v1"},
+        "upstream": {
+          "type": "object", "additionalProperties": false, "required": ["name", "version"],
+          "properties": {
+            "name": {"const": "YARA Forge Full"},
+            "version": {"type": "string", "minLength": 1}
+          }
+        },
+        "rule_count": {"type": "integer", "minimum": 1},
+        "public_rule_count": {"type": "integer", "minimum": 1},
+        "private_rule_count": {"type": "integer", "minimum": 0},
+        "manifest_artifact": {"const": "artifacts/yara/ruleset-manifest.json"}
+      }
+    },
+    "started_at": {"type": "string", "format": "date-time"},
+    "finished_at": {"type": "string", "format": "date-time"},
+    "elapsed_seconds": {"type": "number", "minimum": 0},
+    "peak_rss_kib": {"type": "integer", "minimum": 0},
+    "exit_status": {"type": ["integer", "null"]},
+    "match_count": {"type": "integer", "minimum": 0},
+    "matches": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["identifier", "namespace", "tags", "metadata", "patterns"],
+        "properties": {
+          "identifier": {"type": "string", "minLength": 1},
+          "namespace": {"type": "string"},
+          "tags": {"type": "array", "items": {"type": "string"}},
+          "metadata": {"type": "object"},
+          "patterns": {
+            "type": "array",
+            "items": {
+              "type": "object", "additionalProperties": false,
+              "required": ["identifier", "offset", "length", "preview"],
+              "properties": {
+                "identifier": {"type": "string"},
+                "offset": {"type": "integer", "minimum": 0},
+                "length": {"type": "integer", "minimum": 0},
+                "preview": {"type": "string", "maxLength": 256}
+              }
+            }
+          }
+        }
+      }
+    },
+    "warnings": {"type": "array", "items": {"type": "string"}},
+    "error": {"type": ["string", "null"]},
+    "truncated": {"type": "boolean"}
+  }
+}

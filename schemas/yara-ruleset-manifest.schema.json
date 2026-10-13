@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tartarus.invalid/schemas/yara-ruleset-manifest.schema.json",
+  "title": "YaraRulesetManifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "name", "version", "selection_policy", "upstream", "minimum_quality", "counts", "imports", "exclusion_counts", "rules"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "name": {"const": "Tartarus ELF"},
+    "version": {"type": "string", "minLength": 1},
+    "selection_policy": {"const": "tartarus-elf-v1"},
+    "upstream": {
+      "type": "object", "additionalProperties": false, "required": ["name", "version"],
+      "properties": {
+        "name": {"const": "YARA Forge Full"},
+        "version": {"type": "string", "minLength": 1}
+      }
+    },
+    "minimum_quality": {"type": "integer", "minimum": 0, "maximum": 100},
+    "counts": {
+      "type": "object", "additionalProperties": false,
+      "required": ["upstream", "public", "private", "compiled", "excluded"],
+      "properties": {
+        "upstream": {"type": "integer", "minimum": 1},
+        "public": {"type": "integer", "minimum": 1},
+        "private": {"type": "integer", "minimum": 0},
+        "compiled": {"type": "integer", "minimum": 1},
+        "excluded": {"type": "integer", "minimum": 0}
+      }
+    },
+    "imports": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "exclusion_counts": {
+      "type": "object", "additionalProperties": {"type": "integer", "minimum": 0}
+    },
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["identifier", "id", "logic_hash", "source_url", "quality", "private", "inclusion_reason", "dependencies"],
+        "properties": {
+          "identifier": {"type": "string", "minLength": 1},
+          "id": {"type": ["string", "null"]},
+          "logic_hash": {"type": ["string", "null"]},
+          "source_url": {"type": ["string", "null"]},
+          "quality": {"type": ["integer", "null"]},
+          "private": {"type": "boolean"},
+          "inclusion_reason": {"type": "string", "minLength": 1},
+          "dependencies": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+        }
+      }
+    }
+  }
+}

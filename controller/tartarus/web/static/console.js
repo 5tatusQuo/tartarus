@@ -70,7 +70,9 @@ document.querySelector('[data-prepare-analysis]')?.addEventListener('click', asy
       range_id: rangeId, case_id: caseRecord.case_id, sample_id: sampleRecord.sample_id,
       telemetry_profile: document.querySelector('#profile').value,
       duration: Number(document.querySelector('#duration').value),
-      archive_password: zipPassword?.value || null
+      archive_password: zipPassword?.value || null,
+      mode: document.querySelector('#workflow-mode')?.value || 'analysis',
+      handoff_probe: Boolean(document.querySelector('#handoff-probe')?.checked)
     })});
     const scope = document.querySelector('#approval-scope');
     scope.replaceChildren(...Object.entries(pendingApproval.job.approval.scope).filter(([key]) => !['operation','post_run_action'].includes(key)).map(([key, value]) => {
@@ -117,13 +119,11 @@ document.querySelectorAll('[data-verify-range]').forEach((button) => button.addE
   finally { button.disabled = false; }
 }));
 
-document.querySelectorAll('[data-rebuild-range]').forEach((button) => button.addEventListener('click', async () => {
+document.querySelectorAll('[data-restore-snapshots]').forEach((button) => button.addEventListener('click', async () => {
   const card = button.closest('[data-range-id]');
   const rangeId = card.dataset.rangeId;
-  const confirmation = window.prompt(`Type ${rangeId} to destroy and rebuild both disposable analysis guests.`);
-  if (confirmation !== rangeId) return;
   button.disabled = true;
-  try { const report = await api(`/api/ranges/${encodeURIComponent(rangeId)}/rebuild`, {method: 'POST', body: JSON.stringify({confirmation})}); notify(report.passed ? 'Sandbox rebuilt and verified.' : 'Sandbox rebuild requires attention.', !report.passed); }
+  try { const report = await api(`/api/ranges/${encodeURIComponent(rangeId)}/snapshots/restore`, {method: 'POST'}); notify(report.passed ? 'Analysis snapshots restored and verified.' : 'Snapshot recovery requires attention.', !report.passed); }
   catch (error) { notify(error.message, true); }
   finally { button.disabled = false; }
 }));

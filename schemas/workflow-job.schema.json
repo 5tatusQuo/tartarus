@@ -16,7 +16,7 @@
     "sample_id": {"type": "string"},
     "range_id": {"type": "string"},
     "run_id": {"type": "string"},
-    "phase": {"enum": ["approval", "verification", "preparing", "starting", "analyzing", "collecting", "recovering", "reporting", "complete", "failed", "attention"]},
+    "phase": {"enum": ["approval", "verification", "preparing", "scanning", "starting", "analyzing", "collecting", "recovering", "reporting", "complete", "failed", "attention"]},
     "status": {"enum": ["pending_approval", "queued", "running", "cancel_requested", "completed", "failed", "needs_attention"]},
     "created_at": {"type": "string", "format": "date-time"},
     "updated_at": {"type": "string", "format": "date-time"},
@@ -42,7 +42,7 @@
           "required": ["state", "phase", "guests", "failure"],
           "properties": {
             "state": {"enum": ["unverified", "clean", "tainted", "recovering", "quarantined"]},
-            "phase": {"enum": ["unverified", "tainted", "freezing", "collecting", "destroying", "redeploying", "verifying", "verified", "failed"]},
+            "phase": {"enum": ["unverified", "tainted", "freezing", "collecting", "restoring", "verifying", "verified", "failed"]},
             "guests": {
               "type": "object", "required": ["remnux", "sandbox"],
               "properties": {

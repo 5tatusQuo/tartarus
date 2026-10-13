@@ -383,7 +383,7 @@ def _archive_tool(remnux: Remote) -> str:
         if path:
             return path
     raise TartarusError(
-        "REMnux is missing a supported 7-Zip tool; install p7zip-full or rebuild the range"
+        "REMnux is missing a supported 7-Zip tool; install p7zip-full or refresh the range"
     )
 
 

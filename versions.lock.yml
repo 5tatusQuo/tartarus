@@ -27,6 +27,9 @@ components:
   inetsim: "1.3.2"
   zeek: "7.2.2"
   temurin_jdk: "21.0.12.1+1"
+  yara_x: "1.21.0"
+  yara_forge_full: "20261011"
+  plyara: "2.2.8"
 artifacts:
   - filename: debian-12.15.0-amd64-netinst.iso
     url: https://cdimage.debian.org/cdimage/archive/12.15.0/amd64/iso-cd/debian-12.15.0-amd64-netinst.iso
@@ -87,4 +90,13 @@ artifacts:
     role: tartarus_remnux
   - filename: gdb-15.2.tar.xz
     url: https://ftp.gnu.org/gnu/gdb/gdb-15.2.tar.xz
+    role: tartarus_remnux
+  - filename: yara-x-v1.21.0-x86_64-unknown-linux-gnu.tar.gz
+    url: https://github.com/VirusTotal/yara-x/releases/download/v1.21.0/yara-x-v1.21.0-x86_64-unknown-linux-gnu.tar.gz
+    role: tartarus_remnux
+  - filename: yara-forge-rules-full-20261011.zip
+    url: https://github.com/YARAHQ/yara-forge/releases/download/20261011/yara-forge-rules-full.zip
+    role: tartarus_remnux
+  - filename: plyara-2.2.8-py3-none-any.whl
+    url: https://files.pythonhosted.org/packages/c3/62/10ecb9f3d6a5e620e3ae496a048838697a7113ccace02cb360f24015b065/plyara-2.2.8-py3-none-any.whl
     role: tartarus_remnux
