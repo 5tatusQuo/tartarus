@@ -246,7 +246,7 @@ Root execution, external network exceptions, destructive range removal, quota ov
 8. Destroy and redeploy the sandbox from the pinned template after every untrusted run.
 9. Re-run isolation and telemetry smoke tests before accepting another run.
 
-Snapshot rollback is limited to benign acceptance fixtures. It is not the recovery mechanism for untrusted execution.
+Snapshots are not part of recovery. Untrusted analysis always destroys and redeploys both analysis guests from versioned templates.
 
 ## 10. Public repository and release gates
 
@@ -268,7 +268,7 @@ Snapshot rollback is limited to benign acceptance fixtures. It is not the recove
 2. Install exclusively from the proposed immutable tag.
 3. Build the Tartarus templates and deploy the compact profile.
 4. Execute the complete benign telemetry, capture, static-analysis, and GDB fixture.
-5. Export and verify evidence, then destroy/redeploy the sandbox.
+5. Export and verify evidence, then destroy and redeploy REMnux and the sandbox.
 6. Repeat isolation and telemetry tests after recovery.
 7. Remove the Tartarus range and prove unrelated resources remain unchanged.
 8. Validate standard and large blueprint generation; run them on suitably sized hosts when available.

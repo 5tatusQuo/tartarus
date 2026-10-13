@@ -12,8 +12,12 @@ from ..config import Config
 from ..elf import triage_elf
 from ..errors import TartarusError
 from ..lifecycle import (
+    assert_analysis_pair_ready,
     cancel_pre_execution_run,
+    pair_recovery_state,
+    quarantine_analysis_pair,
     rebuild_sandbox,
+    recover_analysis_pair,
     start_remote_run,
     stop_remote_run,
     stop_static_analysis_run,
@@ -92,6 +96,7 @@ class ConsoleService:
         return {
             "range_id": range_id,
             "telemetry": telemetry,
+            "analysis_pair_recovery": pair_recovery_state(self.config, range_id),
             "guests": [
                 {
                     "role": role,
@@ -227,6 +232,7 @@ class ConsoleService:
         if not auth_status["connected"] or not auth_status["plan_usage"]:
             raise TartarusError("connect a ChatGPT account with plan usage before starting analysis")
         self._assert_managed(range_id)
+        recovery = assert_analysis_pair_ready(self.config, range_id)
         safe_id(case_id, "case ID")
         safe_id(sample_id, "sample ID")
         if telemetry_profile not in {"lightweight", "standard", "deep"}:
@@ -261,7 +267,7 @@ class ConsoleService:
             "debug_session": True,
             "input_type": "zip" if is_archive else "elf",
             "archive_password_provided": bool(archive_password) if is_archive else False,
-            "post_run_action": "collect evidence, rebuild and verify sandbox, generate report",
+            "post_run_action": "collect evidence, rebuild and verify both analysis guests, generate report",
         }
         created = self.jobs.create(
             case_id=case_id,
@@ -270,6 +276,8 @@ class ConsoleService:
             run_id=run_id,
             scope=scope,
         )
+        self.jobs.set_analysis_pair_recovery(created[0]["job_id"], recovery)
+        created = (self.jobs.get(created[0]["job_id"]), created[1])
         if is_archive:
             with self._secret_lock:
                 self._workflow_secrets[created[0]["job_id"]] = archive_password or ""
@@ -284,6 +292,12 @@ class ConsoleService:
         store.transition(job_id, "verification", message="AI authorization is valid. Running the complete range verification gate.")
         verification = self.verify(job["range_id"])
         if not verification["passed"]:
+            quarantine_analysis_pair(
+                self.config,
+                job["range_id"],
+                "range readiness verification failed",
+            )
+            self._sync_job_recovery(job_id, job["range_id"])
             raise TartarusError("range verification failed; the sample was not executed")
         deployment = load_json(self.config.cache_root / "state" / "prepare-manifest.json")
         run = create_run(
@@ -316,15 +330,17 @@ class ConsoleService:
                         archive_password,
                         provider=ChatGPTCodexProvider(self.auth.access_token),
                     )
+                    self._sync_job_recovery(job_id, job["range_id"])
                 except Exception:
                     current = store.get(job_id)
                     if current["status"] == "cancel_requested":
                         cancel_pre_execution_run(self.config, run_file)
+                        self._sync_job_recovery(job_id, job["range_id"])
                         store.transition(
                             job_id,
                             "attention",
                             status="needs_attention",
-                            message="The AI agent canceled before execution; staged files were removed.",
+                            message="The AI agent canceled before execution; both analysis guests were recovered.",
                             resumability="safe_cleanup_only",
                             failure=current["failure"],
                         )
@@ -354,6 +370,7 @@ class ConsoleService:
                 True,
                 sample_override=prepared_sample,
             )
+            self._sync_job_recovery(job_id, job["range_id"])
         finally:
             if prepared_sample is not None:
                 prepared_sample.unlink(missing_ok=True)
@@ -380,6 +397,7 @@ class ConsoleService:
                 message="The AI agent requested cancellation. Starting the required safe cleanup path.",
             )
             stop_remote_run(self.config, run_file)
+            self._sync_job_recovery(job_id, job["range_id"])
             store.transition(
                 job_id,
                 "attention",
@@ -397,7 +415,8 @@ class ConsoleService:
             message="Stopping execution and collecting controller-owned evidence.",
         )
         stop_remote_run(self.config, run_file)
-        recovery_message = "The disposable sandbox was rebuilt and recovery verification passed."
+        self._sync_job_recovery(job_id, job["range_id"])
+        recovery_message = "The disposable analysis pair was rebuilt and verification passed."
         store.transition(job_id, "recovering", message=recovery_message)
         store.transition(job_id, "reporting", message="Generating the evidence-linked report and technical annex.")
         generate_agent_report(
@@ -422,18 +441,71 @@ class ConsoleService:
             raise TartarusError("run has not reached remote execution")
         self.jobs.append_event(job_id, "collecting", "Operator requested emergency stop.", level="warning")
         run = load_json(run_file)
-        if run.get("execution_mode") == "static_only":
-            stop_static_analysis_run(self.config, run_file)
-        else:
-            stop_remote_run(self.config, run_file)
+        try:
+            if run.get("execution_mode") == "static_only":
+                stop_static_analysis_run(self.config, run_file)
+            else:
+                stop_remote_run(self.config, run_file)
+        finally:
+            self._sync_job_recovery(job_id, job["range_id"])
         return self.jobs.transition(
             job_id,
             "attention",
             status="needs_attention",
-            message="Execution stopped, evidence collected, and sandbox recovery attempted.",
+            message="Execution stopped, evidence collected, and analysis-pair recovery attempted.",
             resumability="safe_cleanup_only",
             failure="Workflow was stopped by the operator.",
         )
+
+    def recover_failed_job(self, job: dict[str, Any], store: JobStore) -> None:
+        """Finish only approved safe cleanup after a workflow exception."""
+        state = pair_recovery_state(self.config, job["range_id"])
+        if state["state"] == "clean":
+            store.set_analysis_pair_recovery(job["job_id"], state)
+            return
+        run_file = self._run_file(job["case_id"], job["run_id"])
+        if not run_file.is_file():
+            return
+        store.append_event(
+            job["job_id"], "recovering", "Resuming required analysis-pair cleanup."
+        )
+        try:
+            recover_analysis_pair(self.config, job["range_id"], run_file=run_file)
+        finally:
+            store.set_analysis_pair_recovery(
+                job["job_id"], pair_recovery_state(self.config, job["range_id"])
+            )
+
+    def resume_interrupted_recoveries(self) -> None:
+        jobs = [
+            job
+            for job in self.jobs.list()
+            if job["status"] == "needs_attention"
+            and pair_recovery_state(self.config, job["range_id"])["state"]
+            in {"unverified", "tainted", "recovering", "quarantined"}
+            and self._run_file(job["case_id"], job["run_id"]).is_file()
+        ]
+        if not jobs:
+            return
+
+        def cleanup() -> None:
+            for job in jobs:
+                try:
+                    self.recover_failed_job(job, self.jobs)
+                except TartarusError as exc:
+                    self.jobs.append_event(
+                        job["job_id"],
+                        "attention",
+                        f"Automatic recovery remains quarantined: {exc}",
+                        level="error",
+                    )
+
+        threading.Thread(
+            target=cleanup, daemon=True, name="tartarus-interrupted-recovery"
+        ).start()
+
+    def _sync_job_recovery(self, job_id: str, range_id: str) -> None:
+        self.jobs.set_analysis_pair_recovery(job_id, pair_recovery_state(self.config, range_id))
 
     def _assert_managed(self, range_id: str) -> None:
         from ..cli import assert_managed_range
@@ -457,6 +529,7 @@ class ConsoleService:
             "started_at": run["started_at"],
             "stopped_at": run.get("stopped_at"),
             "recovery_verified": run.get("recovery_verified"),
+            "analysis_pair_recovery": run.get("analysis_pair_recovery"),
             "visibility_gaps": run["visibility_gaps"],
             "artifact_count": len(run["artifacts"]),
             "report_available": (run_dir / "report.md").is_file(),

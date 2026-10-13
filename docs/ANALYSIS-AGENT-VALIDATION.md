@@ -24,7 +24,7 @@ Radare2 identified 1,208 functions. Ghidra and radare2 identified BusyBox string
 
 The sandbox ran the fixture with the name `sample`. The fixture wrote `sample: applet not found` to standard error and exited. It did not create a filesystem difference. This behavior supports the benign BusyBox multicall hypothesis. The test did not produce evidence for an APT attribution, a malicious IOC, a MITRE ATT&CK mapping, or a Sigma rule.
 
-The collected run manifest records the artifacts and successful sandbox recovery. The range returned to the `SUCCESS` state with all four virtual machines powered on.
+The historical collected run manifest records the artifacts and successful legacy sandbox recovery. This does not prove analysis-pair recovery under the current policy.
 
 ## Defects found
 

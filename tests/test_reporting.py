@@ -114,7 +114,11 @@ def _handoff(reference: str = "evidence.txt") -> dict:
             "process_attribution": gate,
             "intelligence_rules": gate,
             "explicit_gaps": gate,
-            "sandbox_recovery": gate,
+            "analysis_pair_recovery": {
+                "passed": True,
+                "explanation": "Both disposable analysis guests were rebuilt and verified.",
+                "evidence_refs": [reference],
+            },
         },
     }
 
@@ -129,6 +133,20 @@ def _completed_run(tmp_path: Path) -> Path:
     run["status"] = "collected"
     run["stopped_at"] = "2026-10-12T01:00:00Z"
     run["recovery_verified"] = True
+    run["analysis_pair_recovery"] = {
+        "schema_version": "1.0",
+        "range_id": "T1",
+        "state": "clean",
+        "phase": "verified",
+        "run_id": "run-1",
+        "tainted_at": "2026-10-12T00:00:00Z",
+        "verified_at": "2026-10-12T01:00:00Z",
+        "guests": {
+            "remnux": {"status": "verified", "current": {"name": "T1-remnux-01", "vmid": 102, "address": "192.0.2.20"}},
+            "sandbox": {"status": "verified", "current": {"name": "T1-linux-sbx-01", "vmid": 103, "address": "192.0.2.30"}},
+        },
+        "failure": None,
+    }
     atomic_json(run_file, run)
     (run_file.parent / "evidence.txt").write_text("known benign fixture\n", encoding="utf-8")
     return run_file
@@ -252,6 +270,21 @@ def test_reporting_rejects_a_missing_evidence_reference(tmp_path: Path) -> None:
             run_file,
             run_file.parent / "report.md",
             codex_executable=str(_fake_codex(tmp_path, _handoff("missing.txt"))),
+        )
+
+
+def test_legacy_sandbox_recovery_does_not_satisfy_pair_gate(tmp_path: Path) -> None:
+    run_file = _completed_run(tmp_path)
+    run = load_json(run_file)
+    del run["analysis_pair_recovery"]
+    run["recovery_verified"] = True
+    atomic_json(run_file, run)
+
+    with pytest.raises(TartarusError, match="analysis-pair completion gate"):
+        generate_agent_report(
+            run_file,
+            run_file.parent / "report.md",
+            codex_executable=str(_fake_codex(tmp_path, _handoff())),
         )
 
 

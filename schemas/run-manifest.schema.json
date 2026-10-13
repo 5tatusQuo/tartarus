@@ -20,6 +20,7 @@
     "remote_started_at": {"type": "string", "format": "date-time"},
     "sandbox_rebuilt_at": {"type": "string", "format": "date-time"},
     "recovery_verified": {"type": "boolean"},
+    "analysis_pair_recovery": {"$ref": "#/$defs/analysis_pair_recovery"},
     "debug_session": {"type": "boolean"},
     "execution_mode": {"enum": ["native", "static_only"]},
     "sample_architecture": {"type": "string", "minLength": 1},
@@ -41,5 +42,40 @@
       }
     },
     "visibility_gaps": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {
+    "identity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "vmid", "address"],
+      "properties": {
+        "name": {"type": "string"}, "vmid": {"type": "integer"}, "address": {"type": "string"}
+      }
+    },
+    "guest_recovery": {
+      "type": "object", "additionalProperties": false, "required": ["status"],
+      "properties": {
+        "status": {"enum": ["unknown", "tainted", "stopped", "collected", "destroyed", "redeployed", "verified", "failed"]},
+        "before": {"$ref": "#/$defs/identity"},
+        "current": {"$ref": "#/$defs/identity"}
+      }
+    },
+    "analysis_pair_recovery": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "range_id", "state", "phase", "run_id", "tainted_at", "verified_at", "guests", "failure"],
+      "properties": {
+        "schema_version": {"const": "1.0"},
+        "range_id": {"type": "string"},
+        "state": {"enum": ["unverified", "clean", "tainted", "recovering", "quarantined"]},
+        "phase": {"enum": ["unverified", "tainted", "freezing", "collecting", "destroying", "redeploying", "verifying", "verified", "failed"]},
+        "run_id": {"type": ["string", "null"]},
+        "tainted_at": {"type": ["string", "null"], "format": "date-time"},
+        "verified_at": {"type": ["string", "null"], "format": "date-time"},
+        "guests": {
+          "type": "object", "additionalProperties": false, "required": ["remnux", "sandbox"],
+          "properties": {"remnux": {"$ref": "#/$defs/guest_recovery"}, "sandbox": {"$ref": "#/$defs/guest_recovery"}}
+        },
+        "failure": {"type": ["string", "null"]}
+      }
+    }
   }
 }

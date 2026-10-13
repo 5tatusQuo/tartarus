@@ -242,7 +242,7 @@
     "completion_gate": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sample_and_artifacts", "function_coverage", "function_details", "static_dynamic_correlation", "process_attribution", "intelligence_rules", "explicit_gaps", "sandbox_recovery"],
+      "required": ["sample_and_artifacts", "function_coverage", "function_details", "static_dynamic_correlation", "process_attribution", "intelligence_rules", "explicit_gaps", "analysis_pair_recovery"],
       "properties": {
         "sample_and_artifacts": {"$ref": "#/$defs/gate"},
         "function_coverage": {"$ref": "#/$defs/gate"},
@@ -251,6 +251,7 @@
         "process_attribution": {"$ref": "#/$defs/gate"},
         "intelligence_rules": {"$ref": "#/$defs/gate"},
         "explicit_gaps": {"$ref": "#/$defs/gate"},
+        "analysis_pair_recovery": {"$ref": "#/$defs/gate"},
         "sandbox_recovery": {"$ref": "#/$defs/gate"}
       }
     }

@@ -21,7 +21,7 @@ Complete the evidence-driven analysis loop in this file first.
 - Use debuggers only against the current sample and its descendants in the analysis environment. The agent can use breakpoints, watchpoints, stepping, memory inspection, controlled memory or register changes, function calls, and other debugger facilities needed to test a recorded hypothesis.
 - Do not upload samples, raw evidence, credentials, private addresses, or proprietary strings to an external service.
 - Do not place credentials, API keys, private keys, or installation secrets in analysis artifacts or reports.
-- Stop and report the condition if containment, evidence integrity, or sandbox recovery cannot be verified.
+- Stop and report the condition if containment, evidence integrity, or analysis-pair recovery cannot be verified.
 
 ## Analysis state machine
 
@@ -141,7 +141,7 @@ Set the state to `analysis_complete` only when:
 - material dynamic activity was traced back to a process or marked unresolved;
 - IOCs, ATT&CK mappings, attribution statements, and Sigma rules pass the evidence rules above;
 - visibility gaps and alternative explanations are explicit; and
-- sandbox destruction, redeployment, and verification succeeded after execution.
+- REMnux and sandbox destruction, redeployment, and analysis-pair verification succeeded after any sample bytes reached either guest.
 
 If any item fails, use `analysis_incomplete` and state what work remains. A polished narrative must not conceal incomplete analysis.
 

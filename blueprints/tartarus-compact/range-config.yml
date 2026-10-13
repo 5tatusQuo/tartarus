@@ -34,7 +34,7 @@ ludus:
     ram_gb: 2
     cpus: 2
     linux: true
-    testing: {snapshot: true, block_internet: true}
+    testing: {snapshot: false, block_internet: true}
     roles:
       - tartarus_common
       - tartarus_sandbox
