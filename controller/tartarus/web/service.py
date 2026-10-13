@@ -7,7 +7,7 @@ import threading
 from pathlib import Path
 from typing import Any, BinaryIO
 
-from ..analysis import prepare_archive_with_agent, run_analysis_agent
+from ..analysis import prepare_archive_with_agent, run_analysis_agent, run_yara_handoff_probe
 from ..config import Config
 from ..elf import triage_elf
 from ..errors import TartarusError
@@ -16,8 +16,9 @@ from ..lifecycle import (
     cancel_pre_execution_run,
     pair_recovery_state,
     quarantine_analysis_pair,
-    rebuild_sandbox,
     recover_analysis_pair,
+    restore_analysis_snapshots,
+    run_yara_only,
     start_remote_run,
     stop_remote_run,
     stop_static_analysis_run,
@@ -113,9 +114,9 @@ class ConsoleService:
         self._assert_managed(range_id)
         return verify_range(self.config, range_id)
 
-    def rebuild(self, range_id: str) -> dict[str, Any]:
+    def restore_snapshots(self, range_id: str) -> dict[str, Any]:
         self._assert_managed(range_id)
-        return rebuild_sandbox(self.config, range_id)
+        return restore_analysis_snapshots(self.config, range_id)
 
     def list_cases(self) -> list[dict[str, Any]]:
         result = []
@@ -227,9 +228,15 @@ class ConsoleService:
         telemetry_profile: str,
         duration: int,
         archive_password: str | None = None,
+        mode: str = "analysis",
+        handoff_probe: bool = False,
     ) -> tuple[dict[str, Any], str]:
+        if mode not in {"analysis", "yara_only"}:
+            raise TartarusError("unsupported workflow mode")
         auth_status = self.auth.status()
-        if not auth_status["connected"] or not auth_status["plan_usage"]:
+        if (mode == "analysis" or handoff_probe) and (
+            not auth_status["connected"] or not auth_status["plan_usage"]
+        ):
             raise TartarusError("connect a ChatGPT account with plan usage before starting analysis")
         self._assert_managed(range_id)
         recovery = assert_analysis_pair_ready(self.config, range_id)
@@ -257,7 +264,11 @@ class ConsoleService:
             raise TartarusError("selected range is not identified by the deployment manifest")
         run_id = new_id("run")
         scope = {
-            "operation": "execute ELF in disposable sandbox and complete guided analysis",
+            "operation": (
+                "scan the sample with bounded YARA-X without executing it"
+                if mode == "yara_only"
+                else "execute ELF in disposable sandbox and complete guided analysis"
+            ),
             "range_id": range_id,
             "case_id": case_id,
             "sample_id": sample_id,
@@ -267,7 +278,13 @@ class ConsoleService:
             "debug_session": True,
             "input_type": "zip" if is_archive else "elf",
             "archive_password_provided": bool(archive_password) if is_archive else False,
-            "post_run_action": "collect evidence, rebuild and verify both analysis guests, generate report",
+            "mode": mode,
+            "handoff_probe": handoff_probe if mode == "yara_only" else False,
+            "post_run_action": (
+                "collect scan evidence, restore and verify both analysis snapshots"
+                if mode == "yara_only"
+                else "collect evidence, restore and verify both analysis snapshots, generate report"
+            ),
         }
         created = self.jobs.create(
             case_id=case_id,
@@ -288,8 +305,10 @@ class ConsoleService:
         scope = job["approval"]["scope"]
         with self._secret_lock:
             archive_password = self._workflow_secrets.pop(job_id, None)
-        self.auth.access_token()
-        store.transition(job_id, "verification", message="AI authorization is valid. Running the complete range verification gate.")
+        mode = scope.get("mode", "analysis")
+        if mode == "analysis" or scope.get("handoff_probe"):
+            self.auth.access_token()
+        store.transition(job_id, "verification", message="Running the complete range verification gate.")
         verification = self.verify(job["range_id"])
         if not verification["passed"]:
             quarantine_analysis_pair(
@@ -309,6 +328,49 @@ class ConsoleService:
             job["run_id"],
         )
         run_file = self._run_file(job["case_id"], run["run_id"])
+        if mode == "yara_only":
+            sample = (
+                self.config.evidence_root
+                / job["case_id"]
+                / "samples"
+                / job["sample_id"]
+                / "sample.bin"
+            )
+            store.transition(
+                job_id,
+                "scanning",
+                message="Preparing the sample on REMnux and running the bounded YARA-X scan.",
+                resumability="safe_cleanup_only",
+            )
+            run_yara_only(
+                self.config,
+                job["range_id"],
+                run_file,
+                sample,
+                verification,
+                archive_password=archive_password if scope.get("input_type") == "zip" else None,
+            )
+            self._sync_job_recovery(job_id, job["range_id"])
+            if scope.get("handoff_probe"):
+                store.transition(
+                    job_id,
+                    "analyzing",
+                    message="Running the isolated low-token YARA handoff probe.",
+                )
+                run_yara_handoff_probe(
+                    run_file,
+                    provider=ChatGPTCodexProvider(self.auth.access_token),
+                )
+            store.transition(
+                job_id,
+                "complete",
+                status="completed",
+                message="YARA evidence, analysis handoff test, and analysis-pair recovery are complete."
+                if scope.get("handoff_probe")
+                else "YARA evidence and analysis-pair recovery are complete.",
+                resumability="complete",
+            )
+            return
         prepared_sample: Path | None = None
         try:
             if scope.get("input_type") == "zip":
@@ -416,7 +478,7 @@ class ConsoleService:
         )
         stop_remote_run(self.config, run_file)
         self._sync_job_recovery(job_id, job["range_id"])
-        recovery_message = "The disposable analysis pair was rebuilt and verification passed."
+        recovery_message = "Both clean analysis snapshots were restored and verification passed."
         store.transition(job_id, "recovering", message=recovery_message)
         store.transition(job_id, "reporting", message="Generating the evidence-linked report and technical annex.")
         generate_agent_report(
@@ -530,6 +592,8 @@ class ConsoleService:
             "stopped_at": run.get("stopped_at"),
             "recovery_verified": run.get("recovery_verified"),
             "analysis_pair_recovery": run.get("analysis_pair_recovery"),
+            "yara_scan": run.get("yara_scan"),
+            "execution_mode": run.get("execution_mode"),
             "visibility_gaps": run["visibility_gaps"],
             "artifact_count": len(run["artifacts"]),
             "report_available": (run_dir / "report.md").is_file(),

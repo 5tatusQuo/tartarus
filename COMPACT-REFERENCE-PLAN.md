@@ -66,7 +66,7 @@ Only these flows are permitted:
 
 Guests cannot initiate connections to WireGuard clients, public networks, the Proxmox host, the Ludus API, or operator-defined infrastructure networks. Isolation tests are repeated with the sandbox guest firewall disabled to prove that enforcement occurs on the Ludus router.
 
-Ludus testing mode remains enabled as an additional egress barrier. REMnux and the sandbox use `testing.snapshot: false`. Every untrusted run destroys and redeploys both analysis guests from the clean versioned templates.
+Ludus testing mode remains enabled as an additional egress barrier. REMnux and the sandbox use clean, disk-only testing snapshots. Every untrusted run restores both analysis guests from those snapshots and verifies readiness before another run is accepted.
 
 ## 4. Reproducible provisioning
 
@@ -135,7 +135,7 @@ tartarus range prepare|deploy|status|verify|destroy
 tartarus case create
 tartarus sample stage
 tartarus run start|stop|collect
-tartarus sandbox rebuild
+tartarus snapshots restore
 tartarus telemetry health|search
 tartarus report generate
 ```
@@ -153,7 +153,7 @@ Sample strings, debugger output, disassembly, packet contents, and log messages 
 5. Execute the staged sandbox copy as the unprivileged `tartarus-runner` inside systemd/cgroup resource limits.
 6. Stop the complete process tree, close `gdbserver`, finalize traces and PCAP, and record audit/packet loss and backpressure.
 7. Pull artifacts to the controller, record their metadata, and generate the run report and canonical JSON manifest.
-8. Destroy and redeploy the sandbox from the pinned template.
+8. Restore the clean REMnux and sandbox snapshots.
 9. Repeat isolation and telemetry smoke tests before marking the range ready.
 
 ## 8. Acceptance tests
@@ -190,7 +190,7 @@ Sample strings, debugger output, disassembly, packet contents, and log messages 
 ### Recovery
 
 - Complete a benign run and evidence export.
-- Destroy/redeploy the sandbox.
+- Restore both clean analysis snapshots.
 - Prove no sample, process, run credential, or altered configuration survives.
 - Re-run containment and telemetry checks and confirm every required controller-side artifact is present.
 

@@ -1,0 +1,7 @@
+{
+  "allow": [],
+  "deny": [],
+  "minimum_quality": 70,
+  "schema_version": "1.0",
+  "selection_policy": "tartarus-elf-v1"
+}

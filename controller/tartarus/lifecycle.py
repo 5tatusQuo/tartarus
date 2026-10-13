@@ -14,6 +14,7 @@ from .manifest import validate
 from .remote import Remote, range_guests
 from .telemetry import record_lifecycle
 from .util import atomic_json, load_json, safe_id, utc_now
+from .yara import scan_staged_sample
 
 PAIR_ROLES = ("remnux", "sandbox")
 
@@ -151,7 +152,7 @@ def _quarantine_pair(
         state="quarantined", phase="failed", failure=str(failure), verified_at=None
     )
     for guest_state in state["guests"].values():
-        if guest_state["status"] not in {"destroyed", "redeployed", "verified"}:
+        if guest_state["status"] not in {"restored", "verified"}:
             guest_state["status"] = "failed"
     _save_pair_recovery(config, state)
     if run_file:
@@ -225,6 +226,12 @@ def start_remote_run(
             owner=remnux.guest.user,
             sample_mode="0400",
         )
+        scan_staged_sample(
+            remnux,
+            run_file,
+            f"/var/spool/tartarus/static/{run['run_id']}/sample",
+        )
+        run = load_json(run_file)
         _static_analysis(remnux, run_file, run)
         routes = remnux.run(("ip", "-j", "route", "show", "default")).stdout
         try:
@@ -305,11 +312,11 @@ def _recover_failed_start(
     try:
         verification = recover_analysis_pair(config, range_id, run_file=run_file)
         run = load_json(run_file)
-        run["sandbox_rebuilt_at"] = utc_now()
+        run["snapshots_restored_at"] = utc_now()
         run["recovery_verified"] = verification["passed"]
     except TartarusError:
         run = load_json(run_file)
-        run["sandbox_rebuilt_at"] = utc_now()
+        run["snapshots_restored_at"] = utc_now()
         run["recovery_verified"] = False
         if "analysis_pair_recovery_failed" not in run["visibility_gaps"]:
             run["visibility_gaps"].append("analysis_pair_recovery_failed")
@@ -361,6 +368,12 @@ def start_static_analysis_run(
             owner=remnux.guest.user,
             sample_mode="0400",
         )
+        scan_staged_sample(
+            remnux,
+            run_file,
+            f"/var/spool/tartarus/static/{run['run_id']}/sample",
+        )
+        run = load_json(run_file)
         _static_analysis(remnux, run_file, run)
     except (TartarusError, KeyboardInterrupt):
         failed = load_json(run_file)
@@ -385,6 +398,83 @@ def start_static_analysis_run(
     validate("run-manifest", run)
     atomic_json(run_file, run)
     return run
+
+
+def run_yara_only(
+    config: Config,
+    range_id: str,
+    run_file: Path,
+    sample: Path,
+    readiness: dict[str, Any],
+    *,
+    archive_password: str | None = None,
+) -> dict[str, object]:
+    """Scan one ELF (or a single-ELF ZIP) without starting sample execution."""
+    if not readiness.get("passed"):
+        quarantine_analysis_pair(
+            config, range_id, "range readiness verification failed", run_file=run_file
+        )
+        raise TartarusError("range readiness verification failed; sample was not staged")
+    if not sample.is_file() or sample.is_symlink():
+        raise TartarusError("controller sample is missing or unsafe")
+    run = load_json(run_file)
+    assert_analysis_pair_ready(config, range_id, run_id=run["run_id"])
+    verification_path = run_file.parent / "artifacts" / "verification" / "pre-run.json"
+    atomic_json(verification_path, readiness)
+    run["artifacts"].append(
+        {
+            "relative_path": verification_path.relative_to(run_file.parent).as_posix(),
+            "media_type": "application/json",
+            "size": verification_path.stat().st_size,
+            "collection_status": "collected",
+            "collected_at": utc_now(),
+        }
+    )
+    run.update(range_id=range_id, execution_mode="yara_only", status="preparing")
+    validate("run-manifest", run)
+    atomic_json(run_file, run)
+    remnux = Remote(config, range_guests(config, range_id)["remnux"])
+    mark_analysis_pair_tainted(config, range_id, run_file)
+    source = f"/var/spool/tartarus/static/{run['run_id']}/input"
+    target = f"/var/spool/tartarus/static/{run['run_id']}/sample"
+    failure: Exception | None = None
+    try:
+        _stage(
+            remnux,
+            sample,
+            run["run_id"],
+            "/var/spool/tartarus/static",
+            owner=remnux.guest.user,
+            sample_mode="0400",
+            destination_name="input",
+        )
+        command = ["/usr/local/sbin/tartarus-yara-input", source, target]
+        if archive_password is not None:
+            command.append(archive_password)
+        remnux.run(tuple(command), timeout=140)
+        scan_staged_sample(remnux, run_file, target)
+    except (TartarusError, KeyboardInterrupt) as exc:
+        failure = exc
+        failed = load_json(run_file)
+        failed["status"] = "failed"
+        if "yara_scan_failed" not in failed["visibility_gaps"]:
+            failed["visibility_gaps"].append("yara_scan_failed")
+        atomic_json(run_file, failed)
+    try:
+        verification = recover_analysis_pair(config, range_id, run_file=run_file)
+        completed = load_json(run_file)
+        completed["recovery_verified"] = verification["passed"]
+        completed["snapshots_restored_at"] = utc_now()
+        completed["stopped_at"] = utc_now()
+        if failure is None:
+            completed["status"] = "collected"
+        validate("run-manifest", completed)
+        atomic_json(run_file, completed)
+    except TartarusError as exc:
+        failure = failure or exc
+    if failure is not None:
+        raise failure
+    return load_json(run_file)
 
 
 def cancel_pre_execution_run(config: Config, run_file: Path) -> dict[str, object]:
@@ -487,7 +577,7 @@ def stop_remote_run(
         raise
     run = load_json(run_file)
     run["stopped_at"] = run.get("stopped_at") or utc_now()
-    run["sandbox_rebuilt_at"] = utc_now()
+    run["snapshots_restored_at"] = utc_now()
     run["recovery_verified"] = verification["passed"]
     run["visibility_gaps"] = [*run["visibility_gaps"], *_visibility_gaps(run_file.parent)]
     run["status"] = (
@@ -533,7 +623,8 @@ def recover_analysis_pair(
     approve_quota_override: bool = False,
     force: bool = False,
 ) -> dict[str, Any]:
-    """Destroy, redeploy, and verify the disposable REMnux/sandbox pair."""
+    """Restore both analysis guests to clean snapshots and verify the range."""
+    _ = wait_seconds  # Retained for CLI compatibility with older recovery calls.
     state = pair_recovery_state(config, range_id)
     if state["state"] == "clean" and state["phase"] == "verified" and not force:
         from .verify import verify_range
@@ -570,34 +661,20 @@ def recover_analysis_pair(
         )
         _save_pair_recovery(config, state)
     elif state["state"] == "quarantined":
-        if force:
-            for guest in state["guests"].values():
-                if "before" not in guest and "current" in guest:
-                    guest["before"] = guest["current"]
-                guest["status"] = "tainted"
-        if any("before" not in guest for guest in state["guests"].values()):
-            try:
-                guests = range_guests(config, range_id)
-                for role in PAIR_ROLES:
-                    state["guests"][role]["before"] = _guest_identity(guests[role])
-            except Exception as exc:
-                _quarantine_pair(config, state, exc, run_file)
-                if isinstance(exc, TartarusError):
-                    raise
-                raise TartarusError(
-                    "analysis-pair inventory failed; the range remains quarantined"
-                ) from exc
-        statuses = {guest["status"] for guest in state["guests"].values()}
-        if force:
-            retry_phase = "destroying"
-        elif statuses <= {"redeployed", "verified"}:
-            retry_phase = "verifying"
-        elif statuses == {"destroyed"}:
-            retry_phase = "redeploying"
-        elif "destroyed" in statuses:
-            retry_phase = "destroying"
-        else:
-            retry_phase = "collecting" if run_file else "destroying"
+        try:
+            guests = range_guests(config, range_id)
+            state["guests"] = {
+                role: {"status": "tainted", "before": _guest_identity(guests[role])}
+                for role in PAIR_ROLES
+            }
+        except Exception as exc:
+            _quarantine_pair(config, state, exc, run_file)
+            if isinstance(exc, TartarusError):
+                raise
+            raise TartarusError(
+                "analysis-pair inventory failed; the range remains quarantined"
+            ) from exc
+        retry_phase = "collecting" if run_file and not force else "restoring"
         state.update(state="recovering", phase=retry_phase, failure=None)
         _save_pair_recovery(config, state)
     if run_file:
@@ -613,8 +690,6 @@ def recover_analysis_pair(
         failure = TartarusError("could not parse Ludus status before analysis-pair recovery")
         _quarantine_pair(config, state, failure, run_file)
         raise failure from exc
-    testing_was_enabled = initial_status.get("testingEnabled") is True
-    testing_stopped = False
     try:
         if state["phase"] in {"tainted", "freezing", "collecting"}:
             state.update(state="recovering", phase="freezing", failure=None)
@@ -643,95 +718,39 @@ def recover_analysis_pair(
                 atomic_json(run_file, run)
                 for role in PAIR_ROLES:
                     state["guests"][role]["status"] = "collected"
-            state["phase"] = "destroying"
+            state["phase"] = "restoring"
             _save_pair_recovery(config, state)
             if run_file:
                 _set_run_pair_recovery(run_file, state)
 
-        if state["phase"] == "destroying":
-            for role in PAIR_ROLES:
-                guest_state = state["guests"][role]
-                if guest_state["status"] == "destroyed":
-                    continue
-                vmid = guest_state["before"]["vmid"]
-                try:
-                    run_ludus(
-                        ("--range", range_id, "vm", "destroy", str(vmid), "--no-prompt"),
-                        config=config.ludus_config,
-                        timeout=300,
-                    )
-                except TartarusError:
-                    inventory = run_ludus(
-                        ("--range", range_id, "range", "inventory"),
-                        config=config.ludus_config,
-                    ).stdout
-                    if guest_state["before"]["name"] in inventory:
-                        raise
-                guest_state["status"] = "destroyed"
-                _save_pair_recovery(config, state)
-                if run_file:
-                    _set_run_pair_recovery(run_file, state)
-            # Testing mode may revert snapshot-enabled guests. It is stopped only
-            # after both tainted guests are confirmed destroyed.
-            if testing_was_enabled:
-                run_ludus(
-                    ("--range", range_id, "testing", "stop"),
-                    config=config.ludus_config,
-                    timeout=300,
+        if state["phase"] == "restoring":
+            if initial_status.get("testingEnabled") is not True:
+                raise TartarusError(
+                    "testing mode is not enabled; refusing snapshot recovery without containment"
                 )
-                testing_stopped = True
-            state["phase"] = "redeploying"
-            _save_pair_recovery(config, state)
-            if run_file:
-                _set_run_pair_recovery(run_file, state)
-
-        if state["phase"] == "redeploying":
-            if not testing_stopped:
-                current_status = json.loads(
-                    run_ludus(
-                        ("--range", range_id, "testing", "status", "--json"),
-                        config=config.ludus_config,
-                    ).stdout
-                )
-                if current_status.get("testingEnabled") is True:
-                    run_ludus(
-                        ("--range", range_id, "testing", "stop"),
-                        config=config.ludus_config,
-                        timeout=300,
-                    )
             run_ludus(
-                ("--range", range_id, "range", "deploy", "--force"),
+                ("--range", range_id, "testing", "stop"),
                 config=config.ludus_config,
-                timeout=180,
+                timeout=600,
             )
-            _wait_for_pair_deployment(config, range_id, wait_seconds)
-            status = json.loads(
-                run_ludus(
-                    ("--range", range_id, "testing", "status", "--json"),
-                    config=config.ludus_config,
-                ).stdout
+            run_ludus(
+                ("--range", range_id, "testing", "start"),
+                config=config.ludus_config,
+                timeout=600,
             )
-            if status.get("testingEnabled") is not True:
-                run_ludus(
-                    ("--range", range_id, "testing", "start"),
-                    config=config.ludus_config,
-                    timeout=300,
-                )
-            rebuilt = range_guests(config, range_id)
+            restored = _wait_for_snapshot_guests(config, range_id, wait_seconds)
             for role in PAIR_ROLES:
                 state["guests"][role].update(
-                    status="redeployed", current=_guest_identity(rebuilt[role])
+                    status="restored", current=_guest_identity(restored[role])
                 )
             state["phase"] = "verifying"
             _save_pair_recovery(config, state)
             if run_file:
                 _set_run_pair_recovery(run_file, state)
 
-        from .verify import verify_range
-
-        verification = verify_range(config, range_id)
+        verification = _verify_snapshot_recovery(config, range_id, wait_seconds)
         if not verification["passed"]:
-            raise TartarusError("analysis-pair verification failed after redeployment")
+            raise TartarusError("analysis-pair verification failed after snapshot restore")
         clean = mark_analysis_pair_clean(config, range_id, verification)
         if run_file:
             completed = {
@@ -756,33 +775,47 @@ def recover_analysis_pair(
         raise TartarusError("analysis-pair recovery failed; the range is quarantined") from exc
 
 
-def rebuild_sandbox(
+def restore_analysis_snapshots(
     config: Config, range_id: str, *, wait_seconds: int = 1800
 ) -> dict[str, object]:
-    """Compatibility wrapper for the former sandbox-only recovery command."""
+    """Restore and verify both analysis guests from their clean snapshots."""
     return recover_analysis_pair(config, range_id, wait_seconds=wait_seconds, force=True)
 
 
-def _wait_for_pair_deployment(config: Config, range_id: str, wait_seconds: int) -> None:
-    deadline = time.monotonic() + wait_seconds
+def _wait_for_snapshot_guests(
+    config: Config, range_id: str, wait_seconds: int
+) -> dict[str, Any]:
+    deadline = time.monotonic() + min(wait_seconds, 300)
     while time.monotonic() < deadline:
         try:
-            status = json.loads(
-                run_ludus(
-                    ("--range", range_id, "testing", "status", "--json"),
-                    config=config.ludus_config,
-                ).stdout
-            )
-        except json.JSONDecodeError:
-            time.sleep(15)
-            continue
-        deployment = str(status.get("rangeState", "")).upper()
-        if deployment == "SUCCESS":
-            return
-        if deployment in {"ERROR", "FAILED", "FAILURE"}:
-            raise TartarusError(f"analysis-pair redeployment failed with state {deployment}")
+            guests = range_guests(config, range_id)
+            if all(
+                _snapshot_guest_ready(Remote(config, guests[role])) for role in PAIR_ROLES
+            ):
+                return guests
+        except TartarusError:
+            pass
+        time.sleep(5)
+    raise TartarusError("analysis guests did not become ready after snapshot restore")
+
+
+def _snapshot_guest_ready(remote: Remote) -> bool:
+    before = time.time()
+    remote_epoch = int(remote.run(("date", "+%s"), timeout=15).stdout.strip())
+    return abs(remote_epoch - ((before + time.time()) / 2)) <= 5
+
+
+def _verify_snapshot_recovery(
+    config: Config, range_id: str, wait_seconds: int
+) -> dict[str, Any]:
+    from .verify import verify_range
+
+    deadline = time.monotonic() + min(wait_seconds, 300)
+    while True:
+        verification = verify_range(config, range_id)
+        if verification["passed"] or time.monotonic() >= deadline:
+            return verification
         time.sleep(15)
-    raise TartarusError("analysis-pair redeployment did not become ready before the deadline")
 
 
 def _freeze_analysis_pair(config: Config, run_file: Path) -> list[str]:
@@ -794,7 +827,7 @@ def _freeze_analysis_pair(config: Config, run_file: Path) -> list[str]:
         "remnux": ("/usr/local/sbin/tartarus-capture", "stop", run["run_id"]),
     }
     for role in PAIR_ROLES:
-        if role == "sandbox" and run.get("execution_mode") == "static_only":
+        if role == "sandbox" and run.get("execution_mode") in {"static_only", "yara_only"}:
             continue
         try:
             Remote(config, guests[role]).run(commands[role], sudo=True)
@@ -845,7 +878,7 @@ def _collect_analysis_pair_evidence(
         ("remnux-state", remnux, state_dir),
         ("remnux-inetsim", remnux, "/var/log/inetsim"),
     ]
-    if run.get("execution_mode") != "static_only":
+    if run.get("execution_mode") not in {"static_only", "yara_only"}:
         sources.insert(0, ("sandbox", sandbox, f"/var/spool/tartarus/runs/{run_id}"))
     for role, remote, source in sources:
         if not _remote_directory_exists(remote, source):
@@ -888,7 +921,7 @@ def _collect_analysis_pair_evidence(
             )
         except TartarusError:
             gaps.append("remnux_capture_collection_failed")
-    elif run.get("execution_mode") != "static_only":
+    elif run.get("execution_mode") not in {"static_only", "yara_only"}:
         gaps.append("remnux_capture_collection_missing")
     return records, gaps
 

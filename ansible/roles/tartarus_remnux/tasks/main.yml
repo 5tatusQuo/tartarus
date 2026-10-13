@@ -78,6 +78,9 @@
         - {name: arcompact-ARCompact.dwarf, url: https://raw.githubusercontent.com/niooss-ledger/ghidra/d3fbf109ada6d051750e973779170c1758622530/Ghidra/Processors/ARC/data/languages/ARCompact.dwarf}
         - {name: OpenJDK21U-jdk_x64_linux_hotspot_21.0.12.1_1.tar.gz, url: https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jdk_x64_linux_hotspot_21.0.12.1_1.tar.gz}
         - {name: gdb-15.2.tar.xz, url: https://ftp.gnu.org/gnu/gdb/gdb-15.2.tar.xz}
+        - {name: yara-x-v1.21.0-x86_64-unknown-linux-gnu.tar.gz, url: https://github.com/VirusTotal/yara-x/releases/download/v1.21.0/yara-x-v1.21.0-x86_64-unknown-linux-gnu.tar.gz}
+        - {name: yara-forge-rules-full-20261011.zip, url: https://github.com/YARAHQ/yara-forge/releases/download/20261011/yara-forge-rules-full.zip}
+        - {name: plyara-2.2.8-py3-none-any.whl, url: https://files.pythonhosted.org/packages/c3/62/10ecb9f3d6a5e620e3ae496a048838697a7113ccace02cb360f24015b065/plyara-2.2.8-py3-none-any.whl}
 
 - name: Check cached analysis artifacts
   ansible.builtin.command: "test -f /var/cache/tartarus/{{ item.name }}"
@@ -96,6 +99,9 @@
     - {name: arcompact-ARCompact.dwarf}
     - {name: OpenJDK21U-jdk_x64_linux_hotspot_21.0.12.1_1.tar.gz}
     - {name: gdb-15.2.tar.xz}
+    - {name: yara-x-v1.21.0-x86_64-unknown-linux-gnu.tar.gz}
+    - {name: yara-forge-rules-full-20261011.zip}
+    - {name: plyara-2.2.8-py3-none-any.whl}
   register: tartarus_remnux_cached_artifacts
 
 - name: Require cached analysis artifacts
@@ -279,6 +285,103 @@
     dest: /usr/local/bin/gdb
     state: link
 
+- name: Install pinned YARA-X
+  ansible.builtin.unarchive:
+    src: /var/cache/tartarus/yara-x-v1.21.0-x86_64-unknown-linux-gnu.tar.gz
+    dest: /usr/local/bin
+    remote_src: true
+    include: [yr]
+    mode: "0755"
+    creates: /usr/local/bin/yr
+
+- name: Install pinned YARA Forge Full source
+  ansible.builtin.file:
+    path: /opt/tartarus/yara-forge-20261011
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Extract pinned YARA Forge Full rules
+  ansible.builtin.unarchive:
+    src: /var/cache/tartarus/yara-forge-rules-full-20261011.zip
+    dest: /opt/tartarus/yara-forge-20261011
+    remote_src: true
+    creates: /opt/tartarus/yara-forge-20261011/packages/full/yara-rules-full.yar
+
+- name: Install the pinned Plyara parser
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -m
+      - zipfile
+      - -e
+      - /var/cache/tartarus/plyara-2.2.8-py3-none-any.whl
+      - /opt/tartarus/yara-builder-2.2.8
+    creates: /opt/tartarus/yara-builder-2.2.8/plyara/__init__.py
+
+- name: Install the deterministic ELF pack builder
+  ansible.builtin.copy:
+    src: tartarus-yara-pack-build
+    dest: /usr/local/sbin/tartarus-yara-pack-build
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the reviewed YARA override policy
+  ansible.builtin.copy:
+    src: tartarus-yara-overrides.json
+    dest: /opt/tartarus/yara-forge-20261011/tartarus-yara-overrides.json
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Generate the deterministic Tartarus ELF pack
+  ansible.builtin.command:
+    argv:
+      - /usr/local/sbin/tartarus-yara-pack-build
+      - --source
+      - /opt/tartarus/yara-forge-20261011/packages/full/yara-rules-full.yar
+      - --overrides
+      - /opt/tartarus/yara-forge-20261011/tartarus-yara-overrides.json
+      - --output
+      - /opt/tartarus/yara-forge-20261011/tartarus-elf.yar
+      - --manifest
+      - /opt/tartarus/yara-forge-20261011/tartarus-elf-manifest.json
+      - --upstream-version
+      - "20261011"
+  changed_when: true
+  environment:
+    PYTHONPATH: /opt/tartarus/yara-builder-2.2.8
+
+- name: Compile the Tartarus ELF pack with YARA-X
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/yr
+      - compile
+      - --disable-warnings
+      - --relaxed-re-syntax
+      - --output
+      - /opt/tartarus/yara-forge-20261011/tartarus-elf.yarc
+      - /opt/tartarus/yara-forge-20261011/tartarus-elf.yar
+  changed_when: true
+
+- name: Install bounded YARA-X scanner
+  ansible.builtin.copy:
+    src: tartarus-yara-scan
+    dest: /usr/local/sbin/tartarus-yara-scan
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install deterministic YARA input preparation helper
+  ansible.builtin.copy:
+    src: tartarus-yara-input
+    dest: /usr/local/sbin/tartarus-yara-input
+    owner: root
+    group: root
+    mode: "0755"
+
 - name: Remove the obsolete standalone GDB MCP source
   ansible.builtin.file:
     path: /opt/tartarus/gdb-mcp-250f670aee9bc32a95522e28b8c499d2e7b9d107
@@ -290,6 +393,7 @@
   loop:
     - {command: inetsim, argument: --version, expected: "1.3.2"}
     - {command: zeek, argument: --version, expected: "7.2.2"}
+    - {command: yr, argument: --version, expected: "1.21.0"}
   register: tartarus_remnux_version_commands
   changed_when: false
 

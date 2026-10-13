@@ -54,9 +54,9 @@ The first native request also found a deployment permission defect. The REMnux a
 
 The native test created 23 radare2 MCP ToolResult artifacts and one `analysis_capabilities` artifact. The retained artifacts include failed and successful calls. The manifest recorded the path, byte size, and collection status for each artifact.
 
-The first teardown exposed a stale Tartarus role on the Ludus server. The stale role tried to install radare2 6.0.4 after the live upgrade to 6.1.8. Ludus rejected the downgrade, and Tartarus correctly recorded `collected_with_gaps` and `sandbox_rebuild_failed`. The controller then updated the registered Tartarus source and completed a forced deployment with the current role.
+An earlier teardown test exposed a stale Tartarus role on the Ludus server. The stale role tried to install radare2 6.0.4 after the live upgrade to 6.1.8. Ludus rejected the downgrade and Tartarus recorded `collected_with_gaps`. The current workflow instead restores and verifies the clean disk snapshots for both VMs after sample bytes reach the range.
 
-The final run, `r2mcp-e2e-20261012c`, repeated native tool discovery and analysis after that deployment. It discovered all 42 tools across both MCP result pages. It retained eight native radare2 ToolResult artifacts and one capability artifact. All nine artifacts were present with the sizes recorded in the manifest. The final run has `status: collected`, `recovery_verified: true`, and no visibility gaps. Its rebuilt sandbox passed the complete range verifier.
+The final run, `r2mcp-e2e-20261012c`, repeated native tool discovery and analysis after that deployment. It discovered all 42 tools across both MCP result pages. It retained eight native radare2 ToolResult artifacts and one capability artifact. All nine artifacts were present with the sizes recorded in the manifest. The final run has `status: collected`, `recovery_verified: true`, and no visibility gaps. Its restored clean snapshots passed the complete range verifier.
 
 ## AI reporting validation
 

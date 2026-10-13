@@ -10,7 +10,7 @@ ludus:
     cpus: 6
     linux: true
     ansible_groups: [tartarus_remnux]
-    testing: {snapshot: false, block_internet: true}
+    testing: {snapshot: true, block_internet: true}
     roles: [tartarus_common, tartarus_remnux, tartarus_agent, tartarus_lockdown]
   - vm_name: "{{ range_id }}-linux-sbx-01"
     hostname: linux-sbx-01
@@ -21,7 +21,7 @@ ludus:
     cpus: 4
     linux: true
     ansible_groups: [tartarus_sandbox]
-    testing: {snapshot: false, block_internet: true}
+    testing: {snapshot: true, block_internet: true}
     roles: [tartarus_common, tartarus_sandbox, tartarus_agent, tartarus_lockdown]
 router: {template: debian-12-x64-server-template, ram_gb: 2, ram_min_gb: 1, cpus: 2}
 network:
@@ -35,4 +35,4 @@ network:
     - {name: remnux elastic ingest, vlan_src: 20, vlan_dst: 10, protocol: tcp, ports: 9200, action: ACCEPT}
     - {name: sandbox elastic ingest, vlan_src: 30, vlan_dst: 10, protocol: tcp, ports: 9200, action: ACCEPT}
 ludus_extensions: {tartarus: {profile: large, schema_version: 1}}
-defaults: {use_cert_auth: false}
+defaults: {use_cert_auth: false, snapshot_with_RAM: false}

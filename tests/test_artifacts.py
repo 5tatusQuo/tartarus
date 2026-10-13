@@ -9,6 +9,8 @@ def test_all_artifacts_have_unique_names() -> None:
         "elasticsearch-9.5.5-amd64.deb",
         "ghidra_11.4.2_PUBLIC_20250826.zip",
         "arcompact-ARCompact.slaspec",
+        "yara-forge-rules-full-20261011.zip",
+        "plyara-2.2.8-py3-none-any.whl",
     } <= set(names)
     for item in artifacts:
         assert ("role" in item) != ("destination" in item)

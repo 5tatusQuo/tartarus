@@ -19,7 +19,7 @@ ludus:
     ram_gb: 4
     cpus: 2
     linux: true
-    testing: {snapshot: false, block_internet: true}
+    testing: {snapshot: true, block_internet: true}
     roles:
       - tartarus_common
       - tartarus_remnux
@@ -34,7 +34,7 @@ ludus:
     ram_gb: 2
     cpus: 2
     linux: true
-    testing: {snapshot: false, block_internet: true}
+    testing: {snapshot: true, block_internet: true}
     roles:
       - tartarus_common
       - tartarus_sandbox
@@ -60,3 +60,4 @@ ludus_extensions:
   tartarus: {profile: compact, schema_version: 1}
 defaults:
   use_cert_auth: false
+  snapshot_with_RAM: false

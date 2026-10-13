@@ -206,7 +206,7 @@ tartarus range prepare|deploy|status|verify|destroy
 tartarus case create
 tartarus sample stage
 tartarus run start|stop|collect
-tartarus sandbox rebuild
+tartarus snapshots restore
 tartarus telemetry health|search
 tartarus report generate
 tartarus bundle create|verify
@@ -243,10 +243,10 @@ Root execution, external network exceptions, destructive range removal, quota ov
 5. Execute the staged sandbox sample with privilege, duration, CPU, memory, process-count, and output limits.
 6. Stop the process tree and debugger, finalize telemetry, and record drop/backpressure counters.
 7. Pull artifacts, record metadata, and generate a report plus canonical manifest.
-8. Destroy and redeploy the sandbox from the pinned template after every untrusted run.
+8. Restore the clean REMnux and sandbox snapshots after every untrusted run.
 9. Re-run isolation and telemetry smoke tests before accepting another run.
 
-Snapshots are not part of recovery. Untrusted analysis always destroys and redeploys both analysis guests from versioned templates.
+Clean disk-only snapshots are the recovery boundary. Untrusted analysis always restores and verifies both analysis guests before the next run.
 
 ## 10. Public repository and release gates
 
@@ -268,7 +268,7 @@ Snapshots are not part of recovery. Untrusted analysis always destroys and redep
 2. Install exclusively from the proposed immutable tag.
 3. Build the Tartarus templates and deploy the compact profile.
 4. Execute the complete benign telemetry, capture, static-analysis, and GDB fixture.
-5. Export and verify evidence, then destroy and redeploy REMnux and the sandbox.
+5. Export and verify evidence, then restore the clean REMnux and sandbox snapshots.
 6. Repeat isolation and telemetry tests after recovery.
 7. Remove the Tartarus range and prove unrelated resources remain unchanged.
 8. Validate standard and large blueprint generation; run them on suitably sized hosts when available.

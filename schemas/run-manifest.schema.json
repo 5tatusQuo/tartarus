@@ -18,11 +18,26 @@
     "range_id": {"type": "string", "minLength": 1},
     "execution_limit_seconds": {"type": "integer", "minimum": 1, "maximum": 3600},
     "remote_started_at": {"type": "string", "format": "date-time"},
-    "sandbox_rebuilt_at": {"type": "string", "format": "date-time"},
+    "snapshots_restored_at": {"type": "string", "format": "date-time"},
     "recovery_verified": {"type": "boolean"},
     "analysis_pair_recovery": {"$ref": "#/$defs/analysis_pair_recovery"},
     "debug_session": {"type": "boolean"},
-    "execution_mode": {"enum": ["native", "static_only"]},
+    "execution_mode": {"enum": ["native", "static_only", "yara_only"]},
+    "yara_scan": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "artifact", "engine_version", "ruleset_version", "rule_count", "match_count", "elapsed_seconds", "peak_rss_kib", "truncated"],
+      "properties": {
+        "status": {"enum": ["complete", "failed", "timed_out"]},
+        "artifact": {"type": "string", "pattern": "^artifacts/yara/"},
+        "engine_version": {"type": "string", "minLength": 1},
+        "ruleset_version": {"type": "string", "minLength": 1},
+        "rule_count": {"type": "integer", "minimum": 1},
+        "match_count": {"type": "integer", "minimum": 0},
+        "elapsed_seconds": {"type": "number", "minimum": 0},
+        "peak_rss_kib": {"type": "integer", "minimum": 0},
+        "truncated": {"type": "boolean"}
+      }
+    },
     "sample_architecture": {"type": "string", "minLength": 1},
     "status": {"enum": ["prepared", "preparing", "starting", "running", "stopping", "collected", "collected_with_gaps", "failed"]},
     "started_at": {"type": "string", "format": "date-time"},
@@ -54,7 +69,7 @@
     "guest_recovery": {
       "type": "object", "additionalProperties": false, "required": ["status"],
       "properties": {
-        "status": {"enum": ["unknown", "tainted", "stopped", "collected", "destroyed", "redeployed", "verified", "failed"]},
+        "status": {"enum": ["unknown", "tainted", "stopped", "collected", "restored", "verified", "failed"]},
         "before": {"$ref": "#/$defs/identity"},
         "current": {"$ref": "#/$defs/identity"}
       }
@@ -66,7 +81,7 @@
         "schema_version": {"const": "1.0"},
         "range_id": {"type": "string"},
         "state": {"enum": ["unverified", "clean", "tainted", "recovering", "quarantined"]},
-        "phase": {"enum": ["unverified", "tainted", "freezing", "collecting", "destroying", "redeploying", "verifying", "verified", "failed"]},
+        "phase": {"enum": ["unverified", "tainted", "freezing", "collecting", "restoring", "verifying", "verified", "failed"]},
         "run_id": {"type": ["string", "null"]},
         "tainted_at": {"type": ["string", "null"], "format": "date-time"},
         "verified_at": {"type": ["string", "null"], "format": "date-time"},

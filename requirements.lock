@@ -42,6 +42,8 @@ opentelemetry-api==1.45.1
     # via fastapi
 platformdirs==4.12.4
     # via -r requirements.in
+plyara==2.2.8
+    # via -r requirements.in
 pycparser==3.11
     # via cffi
 pydantic==2.14.1

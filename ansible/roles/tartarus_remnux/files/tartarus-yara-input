@@ -1,0 +1,92 @@
+#!/usr/bin/python3
+"""Prepare one ELF from a direct input or ZIP without executing sample content."""
+
+import os
+import shutil
+import stat
+import subprocess
+import sys
+import tempfile
+from pathlib import Path, PurePosixPath
+
+MAX_BYTES = 1024**3
+
+
+def is_elf(path):
+    with path.open("rb") as stream:
+        return stream.read(4) == b"\x7fELF"
+
+
+def member_is_safe(name):
+    normalized = name.replace("\\", "/")
+    path = PurePosixPath(normalized)
+    return bool(
+        normalized
+        and "\x00" not in normalized
+        and not path.is_absolute()
+        and ".." not in path.parts
+        and not (path.parts and path.parts[0].endswith(":"))
+    )
+
+
+def find_single_elf(root):
+    candidates = []
+    total = 0
+    for path in root.rglob("*"):
+        details = path.lstat()
+        if stat.S_ISLNK(details.st_mode):
+            raise SystemExit("ZIP contains a symbolic link")
+        if not stat.S_ISREG(details.st_mode):
+            continue
+        if not path.resolve().is_relative_to(root):
+            raise SystemExit("ZIP path escapes extraction root")
+        total += details.st_size
+        if total > MAX_BYTES:
+            raise SystemExit("ZIP expanded content exceeds 1 GiB")
+        if is_elf(path):
+            candidates.append(path)
+    if len(candidates) != 1:
+        raise SystemExit(f"ZIP must contain exactly one ELF; found {len(candidates)}")
+    return candidates[0]
+
+
+def main():
+    if len(sys.argv) not in {3, 4}:
+        raise SystemExit("usage: tartarus-yara-input INPUT OUTPUT [ZIP_PASSWORD]")
+    source = Path(sys.argv[1])
+    output = Path(sys.argv[2])
+    if is_elf(source):
+        shutil.copyfile(source, output)
+        os.chmod(output, 0o400)
+        return
+    password = sys.argv[3] if len(sys.argv) == 4 else ""
+    with tempfile.TemporaryDirectory(prefix="tartarus-yara-") as temporary:
+        root = Path(temporary).resolve()
+        listing = subprocess.run(
+            ["7z", "l", "-slt", f"-p{password}", "--", str(source)],
+            capture_output=True, text=True, timeout=120, check=False,
+        )
+        if listing.returncode:
+            raise SystemExit("ZIP listing failed: " + listing.stderr[-1000:])
+        in_members = False
+        for line in listing.stdout.splitlines():
+            if line.startswith("----------"):
+                in_members = True
+                continue
+            if not in_members or not line.startswith("Path = "):
+                continue
+            name = line.removeprefix("Path = ")
+            if not member_is_safe(name):
+                raise SystemExit("ZIP contains an unsafe member path")
+        completed = subprocess.run(
+            ["7z", "x", "-y", f"-p{password}", f"-o{root}", "--", str(source)],
+            capture_output=True, text=True, timeout=120, check=False,
+        )
+        if completed.returncode:
+            raise SystemExit("ZIP extraction failed: " + completed.stderr[-1000:])
+        shutil.copyfile(find_single_elf(root), output)
+        os.chmod(output, 0o400)
+
+
+if __name__ == "__main__":
+    main()

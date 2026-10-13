@@ -116,7 +116,7 @@ def _handoff(reference: str = "evidence.txt") -> dict:
             "explicit_gaps": gate,
             "analysis_pair_recovery": {
                 "passed": True,
-                "explanation": "Both disposable analysis guests were rebuilt and verified.",
+                "explanation": "Both clean analysis snapshots were restored and verified.",
                 "evidence_refs": [reference],
             },
         },
