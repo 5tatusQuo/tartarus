@@ -98,7 +98,7 @@ build {
     execute_command = "echo 'password' | sudo -S sh -c '{{ .Vars }} {{ .Path }}'"
     inline = [
       "apt-get update",
-      "DEBIAN_FRONTEND=noninteractive apt-get install -y python3 qemu-guest-agent sudo auditd audispd-plugins jq rsync curl dumpcap inetsim gdb radare2 lsof openssl unzip iproute2 iputils-ping netcat-openbsd build-essential texinfo libgmp-dev libmpfr-dev python3-dev cmake flex bison libpcap-dev libssl-dev swig zlib1g-dev libmaxminddb-dev",
+      "DEBIAN_FRONTEND=noninteractive apt-get install -y python3 qemu-guest-agent sudo auditd audispd-plugins jq rsync curl dumpcap inetsim gdb radare2 lsof openssl unzip p7zip-full iproute2 iputils-ping netcat-openbsd build-essential texinfo libgmp-dev libmpfr-dev python3-dev cmake flex bison libpcap-dev libssl-dev swig zlib1g-dev libmaxminddb-dev",
       "apt-get clean"
     ]
   }

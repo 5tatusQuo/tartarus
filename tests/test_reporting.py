@@ -279,3 +279,19 @@ def test_reporting_rejects_prose_that_breaks_simplified_english(tmp_path: Path) 
             run_file.parent / "report.md",
             codex_executable=str(_fake_codex(tmp_path, handoff)),
         )
+
+
+def test_reporting_normalizes_internal_generator_language(tmp_path: Path) -> None:
+    run_file = _completed_run(tmp_path)
+    handoff = _handoff()
+    handoff["scope"]["claim"] = "The authoritative context lists the retained evidence."
+
+    result = generate_agent_report(
+        run_file,
+        run_file.parent / "report.md",
+        codex_executable=str(_fake_codex(tmp_path, handoff)),
+    )
+
+    saved = json.loads(Path(result["handoff"]).read_text(encoding="utf-8"))
+    assert saved["scope"]["claim"] == "The evidence record lists the retained evidence."
+    assert result["attempts"] == 1

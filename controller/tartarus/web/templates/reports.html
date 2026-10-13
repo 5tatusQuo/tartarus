@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Reports{% endblock %}
+{% block content %}
+<header class="topbar"><div><span class="eyebrow">Evidence-backed intelligence</span><h1>Technical reports</h1><p>Completed assessments and their whole-program technical annexes.</p></div></header>
+<section class="card table-card">
+  <div class="table-tools"><label class="search"><span>⌕</span><input type="search" placeholder="Filter reports" data-run-search></label><span>{{ reports|length }} available</span></div>
+  <div class="data-table" data-run-list><div class="table-head"><span>Report</span><span>Range</span><span>Completed</span><span>Evidence</span><span></span></div>
+  {% for run in reports %}<a class="table-row" href="/reports/{{ run.case_id }}/{{ run.run_id }}" data-search="{{ run.case_id }} {{ run.run_id }} {{ run.sample_id }} {{ run.range_id }}"><span><strong>{{ run.run_id }}</strong><small>{{ run.case_id }} · {{ run.sample_id }}</small></span><span>{{ run.range_id }}</span><time>{{ (run.stopped_at or run.started_at)[:16]|replace('T',' ') }}</time><span>{{ run.artifact_count }} artifacts</span><span>›</span></a>
+  {% else %}<div class="empty"><span>≣</span><h3>No completed reports</h3><p>Reports appear after evidence collection and sandbox recovery.</p></div>{% endfor %}</div>
+</section>
+{% endblock %}

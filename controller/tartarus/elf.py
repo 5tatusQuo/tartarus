@@ -18,8 +18,8 @@ def triage_elf(path: Path) -> dict[str, Any]:
         raise TartarusError("sample has an unsupported ELF identification header")
     endian = "<" if data == 1 else ">"
     elf_type, machine = struct.unpack_from(endian + "HH", header, 16)
-    if header[6] != 1 or elf_class != 2 or data != 1 or machine != 62:
-        raise TartarusError("sample is not a supported AMD64 little-endian ELF")
+    if header[6] != 1:
+        raise TartarusError("sample has an unsupported ELF version")
     if elf_type not in {2, 3}:
         raise TartarusError("sample must be an executable or shared-object ELF")
     return {
@@ -28,3 +28,11 @@ def triage_elf(path: Path) -> dict[str, Any]:
         "type": elf_type,
         "machine": machine,
     }
+
+
+def supports_native_sandbox_execution(metadata: dict[str, Any]) -> bool:
+    return (
+        metadata["class"] == 64
+        and metadata["endianness"] == "little"
+        and metadata["machine"] == 62
+    )

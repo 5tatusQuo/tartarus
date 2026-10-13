@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Overview{% endblock %}
+{% block content %}
+<header class="topbar">
+  <div><span class="eyebrow">Contained Linux analysis</span><h1>Ready when the range is.</h1></div>
+  <a class="button primary" href="/analysis/new">Start new analysis <span>→</span></a>
+</header>
+
+<section class="hero-grid">
+  <article class="card posture-card">
+    <div class="card-heading"><span class="icon-box">⌁</span><span class="pill neutral" data-ludus-status>Checking</span></div>
+    <h2>Range connection</h2>
+    <p data-ludus-identity>Checking Ludus authentication in the background…</p>
+    <a class="text-link" href="/range">Inspect range posture →</a>
+  </article>
+  <article class="card posture-card">
+    <div class="card-heading"><span class="icon-box warm">✦</span><span class="pill {{ 'success' if overview.chatgpt.connected else 'neutral' }}">{{ 'Authorized' if overview.chatgpt.connected else 'Action needed' }}</span></div>
+    <h2>AI analysis</h2>
+    <p>{{ overview.chatgpt.email or 'Connect ChatGPT before starting an autonomous analysis.' }}</p>
+    <a class="text-link" href="/settings">Manage connection →</a>
+  </article>
+  <article class="card posture-card metric-card">
+    <span class="eyebrow">Evidence capacity</span>
+    <strong>{{ '%.1f'|format(overview.evidence_free_bytes / 1073741824) }}<small> GiB free</small></strong>
+    <div class="metric-row"><span>{{ overview.case_count }} cases</span><span>{{ overview.run_count }} runs</span></div>
+  </article>
+</section>
+
+{% if overview.active_job %}
+<section class="card active-run">
+  <div><span class="pulse"></span><span class="eyebrow">Active workflow</span><h2>{{ overview.active_job.phase|replace('_', ' ')|title }}</h2><p>{{ overview.active_job.case_id }} · {{ overview.active_job.run_id }}</p></div>
+  <a class="button secondary" href="/jobs/{{ overview.active_job.job_id }}">Watch progress</a>
+</section>
+{% endif %}
+
+<section class="section-block">
+  <div class="section-title"><div><span class="eyebrow">Evidence history</span><h2>Recent runs</h2></div><a class="text-link" href="/runs">View all runs →</a></div>
+  <div class="run-list">
+  {% for run in overview.recent_runs %}
+    <a class="run-row" href="/runs/{{ run.case_id }}/{{ run.run_id }}">
+      <span class="run-mark {{ run.status }}"></span>
+      <span><strong>{{ run.run_id }}</strong><small>{{ run.case_id }} · {{ run.sample_id }}</small></span>
+      <span class="run-meta"><span>{{ run.telemetry_profile }}</span><time>{{ run.started_at[:16]|replace('T', ' ') }}</time></span>
+      <span class="pill {{ 'success' if run.status == 'collected' else 'warning' if run.status in ['running','starting','stopping'] else 'neutral' }}">{{ run.status|replace('_',' ') }}</span>
+      <span>›</span>
+    </a>
+  {% else %}
+    <div class="empty"><span>◎</span><h3>No analysis runs yet</h3><p>Your completed and active investigations will appear here.</p></div>
+  {% endfor %}
+  </div>
+</section>
+{% endblock %}

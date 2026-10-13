@@ -30,6 +30,7 @@
       - libpcap-dev
       - libssl-dev
       - lsof
+      - p7zip-full
       - python3-dev
       - swig
       - texinfo
@@ -69,6 +70,12 @@
         - {name: r2mcp_1.8.8_amd64.deb, url: https://github.com/radareorg/radare2-mcp/releases/download/1.8.8/r2mcp_1.8.8_amd64.deb}
         - {name: radare2_6.1.8_amd64.deb, url: https://github.com/radareorg/radare2/releases/download/6.1.8/radare2_6.1.8_amd64.deb}
         - {name: ghidra_11.4.2_PUBLIC_20250826.zip, url: https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_11.4.2_build/ghidra_11.4.2_PUBLIC_20250826.zip}
+        - {name: arcompact-ARCompact.slaspec, url: https://raw.githubusercontent.com/niooss-ledger/ghidra/d3fbf109ada6d051750e973779170c1758622530/Ghidra/Processors/ARC/data/languages/ARCompact.slaspec}
+        - {name: arcompact-ARCompact.ldefs, url: https://raw.githubusercontent.com/niooss-ledger/ghidra/d3fbf109ada6d051750e973779170c1758622530/Ghidra/Processors/ARC/data/languages/ARCompact.ldefs}
+        - {name: arcompact-ARCompact.opinion, url: https://raw.githubusercontent.com/niooss-ledger/ghidra/d3fbf109ada6d051750e973779170c1758622530/Ghidra/Processors/ARC/data/languages/ARCompact.opinion}
+        - {name: arcompact-ARCompact.pspec, url: https://raw.githubusercontent.com/niooss-ledger/ghidra/d3fbf109ada6d051750e973779170c1758622530/Ghidra/Processors/ARC/data/languages/ARCompact.pspec}
+        - {name: arcompact-ARCompact.cspec, url: https://raw.githubusercontent.com/niooss-ledger/ghidra/d3fbf109ada6d051750e973779170c1758622530/Ghidra/Processors/ARC/data/languages/ARCompact.cspec}
+        - {name: arcompact-ARCompact.dwarf, url: https://raw.githubusercontent.com/niooss-ledger/ghidra/d3fbf109ada6d051750e973779170c1758622530/Ghidra/Processors/ARC/data/languages/ARCompact.dwarf}
         - {name: OpenJDK21U-jdk_x64_linux_hotspot_21.0.12.1_1.tar.gz, url: https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jdk_x64_linux_hotspot_21.0.12.1_1.tar.gz}
         - {name: gdb-15.2.tar.xz, url: https://ftp.gnu.org/gnu/gdb/gdb-15.2.tar.xz}
 
@@ -81,6 +88,12 @@
     - {name: r2mcp_1.8.8_amd64.deb}
     - {name: radare2_6.1.8_amd64.deb}
     - {name: ghidra_11.4.2_PUBLIC_20250826.zip}
+    - {name: arcompact-ARCompact.slaspec}
+    - {name: arcompact-ARCompact.ldefs}
+    - {name: arcompact-ARCompact.opinion}
+    - {name: arcompact-ARCompact.pspec}
+    - {name: arcompact-ARCompact.cspec}
+    - {name: arcompact-ARCompact.dwarf}
     - {name: OpenJDK21U-jdk_x64_linux_hotspot_21.0.12.1_1.tar.gz}
     - {name: gdb-15.2.tar.xz}
   register: tartarus_remnux_cached_artifacts
@@ -192,6 +205,48 @@
     src: /opt/ghidra_11.4.2_PUBLIC/support/analyzeHeadless
     dest: /usr/local/bin/analyzeHeadless
     state: link
+
+- name: Create the pinned ARCompact Ghidra processor module
+  ansible.builtin.file:
+    path: /opt/ghidra_11.4.2_PUBLIC/Ghidra/Processors/ARC/data/languages
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Register the ARCompact directory as a Ghidra module
+  ansible.builtin.file:
+    path: /opt/ghidra_11.4.2_PUBLIC/Ghidra/Processors/ARC/Module.manifest
+    state: touch
+    owner: root
+    group: root
+    mode: "0644"
+    modification_time: preserve
+    access_time: preserve
+
+- name: Install pinned ARCompact Ghidra language sources
+  ansible.builtin.copy:
+    src: "/var/cache/tartarus/arcompact-{{ item }}"
+    dest: "/opt/ghidra_11.4.2_PUBLIC/Ghidra/Processors/ARC/data/languages/{{ item }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - ARCompact.slaspec
+    - ARCompact.ldefs
+    - ARCompact.opinion
+    - ARCompact.pspec
+    - ARCompact.cspec
+    - ARCompact.dwarf
+
+- name: Compile the pinned ARCompact Ghidra language
+  ansible.builtin.command:
+    argv:
+      - /opt/ghidra_11.4.2_PUBLIC/support/sleigh
+      - /opt/ghidra_11.4.2_PUBLIC/Ghidra/Processors/ARC/data/languages/ARCompact.slaspec
+  args:
+    creates: /opt/ghidra_11.4.2_PUBLIC/Ghidra/Processors/ARC/data/languages/ARCompact.sla
 
 - name: Unpack pinned GDB source
   ansible.builtin.unarchive:

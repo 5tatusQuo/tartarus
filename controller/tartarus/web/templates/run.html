@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}{{ run.run_id }}{% endblock %}
+{% block content %}
+<header class="topbar"><div><span class="eyebrow">{{ run.case_id }} / {{ run.sample_id }}</span><h1>{{ run.run_id }}</h1><p>{{ run.range_id or 'Range not assigned' }} · {{ run.telemetry_profile }} telemetry</p></div>{% if run.report_available %}<a class="button primary" href="/reports/{{ run.case_id }}/{{ run.run_id }}">Read report →</a>{% endif %}</header>
+<section class="status-banner {{ 'safe' if run.recovery_verified else 'attention' }}"><span>{{ '✓' if run.recovery_verified else '!' }}</span><div><strong>{{ 'Sandbox recovery verified' if run.recovery_verified else 'Recovery verification pending' }}</strong><p>Status: {{ run.status|replace('_',' ') }} · {{ run.artifact_count }} retained artifacts</p></div></section>
+<section class="run-layout">
+  <article class="card progress-card">
+    <div class="section-title"><div><span class="eyebrow">Live workflow</span><h2>Analysis progress</h2></div><span class="pill neutral">{{ run.status }}</span></div>
+    <ol class="timeline">
+      {% for phase in ['Verification','Starting','Analyzing','Collecting','Recovering','Reporting','Complete'] %}<li class="{{ 'done' if run.status in ['collected','collected_with_gaps'] else 'current' if loop.first else '' }}"><span>{{ '✓' if run.status in ['collected','collected_with_gaps'] else loop.index }}</span><div><strong>{{ phase }}</strong><small>{{ 'Recorded' if run.status in ['collected','collected_with_gaps'] else 'Awaiting workflow event' }}</small></div></li>{% endfor %}
+    </ol>
+  </article>
+  <article class="card evidence-card"><span class="eyebrow">Evidence health</span><h2>{{ run.artifact_count }} artifacts</h2><div class="metric-row"><span>Visibility gaps</span><strong>{{ run.visibility_gaps|length }}</strong></div><div class="metric-row"><span>Recovery</span><strong>{{ 'Passed' if run.recovery_verified else 'Pending' }}</strong></div>{% if run.visibility_gaps %}<ul class="gap-list">{% for gap in run.visibility_gaps %}<li>{{ gap }}</li>{% endfor %}</ul>{% endif %}</article>
+  <article class="card event-card full-span"><div class="section-title"><div><span class="eyebrow">Bounded event stream</span><h2>Workflow activity</h2></div></div><div class="event-log" data-job-events data-run-id="{{ run.run_id }}" aria-live="polite"><p>No live workflow stream is attached to this historical view.</p></div></article>
+</section>
+{% endblock %}

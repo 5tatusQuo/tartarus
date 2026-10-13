@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tartarus.invalid/schemas/archive-preparation.schema.json",
+  "title": "ArchivePreparation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["prepared", "member", "failure"],
+  "properties": {
+    "prepared": {"type": "boolean"},
+    "member": {"type": "string", "maxLength": 4096},
+    "failure": {"type": ["string", "null"], "maxLength": 4096}
+  }
+}

@@ -162,6 +162,26 @@ It does not change the repository.
 
 ## Analyze an ELF file
 
+### Use the operator console
+
+Start the controller-local console:
+
+```bash
+tartarus ui
+```
+
+Open `http://127.0.0.1:8741`. The console guides one trusted operator through range selection,
+case creation, safe ELF staging, explicit execution approval, live analysis progress, evidence
+recovery, and report review. It binds to the loopback interface by default. Use the command-line
+interface for range deployment, permanent destruction, WireGuard export, and raw operator
+credentials.
+
+Connect an eligible ChatGPT account from **Settings** before an AI-driven run. Tartarus stores the
+OAuth credentials in owner-only controller storage. It does not put access or refresh tokens in
+browser storage, logs, reports, or run evidence.
+
+### Use the command line
+
 1. Create an evidence case.
 
    ```bash

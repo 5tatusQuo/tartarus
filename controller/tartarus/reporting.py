@@ -13,8 +13,9 @@ from typing import Any
 
 import yaml
 
-from .errors import TartarusError
-from .manifest import project_root, validate
+from .errors import AuthenticationRequired, TartarusError
+from .manifest import project_root, schema_path, validate
+from .providers import CliCodexProvider, CodexProvider
 from .util import atomic_json, load_json, new_id, utc_now
 
 REPORT_TIMEOUT_SECONDS = 3600
@@ -39,6 +40,7 @@ def generate_agent_report(
     local_provider: str | None = None,
     codex_executable: str | None = None,
     timeout: int = REPORT_TIMEOUT_SECONDS,
+    provider: CodexProvider | None = None,
 ) -> dict[str, Any]:
     run_file = run_file.resolve(strict=True)
     run_dir = run_file.parent
@@ -63,7 +65,7 @@ def generate_agent_report(
     context = _report_context(run_file, run, session_dir)
     atomic_json(session_dir / "context.json", context)
     handoff_path = session_dir / "analysis-handoff.json"
-    schema_path = project_root() / "schemas" / "analysis-handoff.schema.json"
+    handoff_schema_path = schema_path("analysis-handoff")
     permitted_evidence = {item["path"] for item in context["evidence_files"]}
     permitted_evidence.add((session_dir / "context.json").relative_to(run_dir).as_posix())
     feedback: str | None = None
@@ -82,7 +84,7 @@ def generate_agent_report(
             executable,
             session_dir,
             run_dir,
-            schema_path,
+            handoff_schema_path,
             attempt_handoff,
             prompt,
             attempt,
@@ -90,9 +92,12 @@ def generate_agent_report(
             reasoning_effort,
             local_provider,
             timeout,
+            provider or CliCodexProvider(),
         )
         try:
             candidate = json.loads(attempt_handoff.read_text(encoding="utf-8"))
+            candidate = _normalize_reader_facing_language(candidate)
+            atomic_json(attempt_handoff, candidate)
             validate("analysis-handoff", candidate)
             _validate_handoff(run_dir, candidate, permitted_evidence)
         except (TartarusError, FileNotFoundError, json.JSONDecodeError) as exc:
@@ -144,7 +149,7 @@ def render_retained_report(
     run = load_json(run_file)
     if run.get("status") not in {"collected", "collected_with_gaps", "failed"}:
         raise TartarusError("report rendering requires a stopped run with collected evidence")
-    handoff = load_json(handoff_path)
+    handoff = _normalize_reader_facing_language(load_json(handoff_path))
     validate("analysis-handoff", handoff)
     permitted_evidence = {
         path.relative_to(run_dir).as_posix()
@@ -184,6 +189,7 @@ def _run_codex_attempt(
     reasoning_effort: str,
     local_provider: str | None,
     timeout: int,
+    provider: CodexProvider,
 ) -> None:
     stdout_path = session_dir / f"codex-{attempt}.stdout.log"
     stderr_path = session_dir / f"codex-{attempt}.stderr.log"
@@ -210,6 +216,7 @@ def _run_codex_attempt(
     if local_provider:
         command.extend(("--oss", "--local-provider", local_provider))
     command.append("-")
+    command, provider_environment = provider.prepare(command)
     try:
         completed = subprocess.run(
             command,
@@ -218,12 +225,17 @@ def _run_codex_attempt(
             text=True,
             timeout=timeout,
             check=False,
+            env=provider_environment,
         )
     except subprocess.TimeoutExpired as exc:
         raise TartarusError(f"Codex reporting exceeded {timeout} seconds") from exc
     stdout_path.write_text(completed.stdout, encoding="utf-8")
     stderr_path.write_text(completed.stderr, encoding="utf-8")
     if completed.returncode != 0:
+        if "token_expired" in completed.stderr or "401 Unauthorized" in completed.stderr:
+            raise AuthenticationRequired(
+                "ChatGPT authorization expired during reporting. Reconnect ChatGPT before retrying."
+            )
         raise TartarusError(
             f"Codex reporting failed with exit status {completed.returncode}; "
             f"see {stderr_path}"
@@ -414,6 +426,25 @@ def _validate_simplified_english(handoff: dict[str, Any]) -> None:
                 break
     if failures:
         raise TartarusError("ASD-STE100 validation failures: " + "; ".join(failures))
+
+
+def _normalize_reader_facing_language(value: Any) -> Any:
+    """Remove known generator bookkeeping phrases without changing report meaning."""
+    replacements = {
+        "authoritative context": "evidence record",
+        "context inventory": "evidence list",
+        "reporting control": "report requirement",
+    }
+    if isinstance(value, str):
+        result = value
+        for internal, reader_facing in replacements.items():
+            result = re.sub(re.escape(internal), reader_facing, result, flags=re.IGNORECASE)
+        return result
+    if isinstance(value, list):
+        return [_normalize_reader_facing_language(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _normalize_reader_facing_language(item) for key, item in value.items()}
+    return value
 
 
 def _reject_opaque_content_identifiers(value: Any) -> None:

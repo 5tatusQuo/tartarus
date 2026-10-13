@@ -3,17 +3,21 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from tartarus.config import Config
 from tartarus.errors import TartarusError
 from tartarus.mcp_gateway import (
     FUNCTION_RE,
     TOOLS,
+    _archive_tool,
     _gdb_execute,
     _gdb_execute_resilient,
     _record_tool_result,
     _require_debug_run,
     _script_name,
     _string,
+    _workflow_control,
 )
+from tartarus.web.jobs import JobStore
 
 
 def test_mcp_surface_covers_ghidra_gdb_and_telemetry() -> None:
@@ -49,6 +53,64 @@ def test_script_names_match_the_requested_analysis_engine() -> None:
         _script_name({"script_name": "../AgentGraph.java"}, ".java")
     with pytest.raises(TartarusError):
         _script_name({"script_name": "agent_analysis.py"}, ".java")
+
+
+class ArchiveToolRemote:
+    def __init__(self, available: str | None) -> None:
+        self.available = available
+
+    def run(self, command, *, timeout):
+        assert timeout == 60
+        if command[1] == self.available:
+            return SimpleNamespace(stdout=f"/usr/bin/{self.available}\n")
+        raise TartarusError("not found")
+
+
+def test_archive_tool_supports_modern_7zz_and_explains_missing_package() -> None:
+    assert _archive_tool(ArchiveToolRemote("7zz")) == "/usr/bin/7zz"
+    with pytest.raises(TartarusError, match="p7zip-full"):
+        _archive_tool(ArchiveToolRemote(None))
+
+
+def test_agent_can_update_operator_and_request_safe_cancellation(tmp_path: Path) -> None:
+    evidence = tmp_path / "evidence"
+    cache = tmp_path / "cache"
+    evidence.mkdir()
+    cache.mkdir()
+    config = Config(
+        evidence_root=evidence,
+        cache_root=cache,
+        management_sources=("198.51.100.2/32",),
+        always_blocked_networks=("192.0.2.0/24",),
+    )
+    store = JobStore(cache)
+    job, token = store.create(
+        case_id="case-1",
+        sample_id="sample-1",
+        range_id="range-1",
+        run_id="run-1",
+        scope={},
+    )
+    store.approve(job["job_id"], token)
+    store.transition(job["job_id"], "analyzing", message="Analysis started.")
+
+    update = _workflow_control(
+        config,
+        "run-1",
+        "workflow_update",
+        {"message": "Architecture limits dynamic analysis.", "level": "warning"},
+    )
+    cancel = _workflow_control(
+        config,
+        "run-1",
+        "workflow_cancel",
+        {"reason": "No safe emulator is available."},
+    )
+
+    assert update["accepted"] is True
+    assert cancel == {"accepted": True, "status": "cancel_requested"}
+    assert store.active()["job_id"] == job["job_id"]
+    assert store.get(job["job_id"])["failure"] == "No safe emulator is available."
 
 
 class RecordingRemote:

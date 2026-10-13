@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tartarus.invalid/schemas/workflow-job.schema.json",
+  "title": "WorkflowJob",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "job_id", "case_id", "sample_id", "range_id", "run_id",
+    "phase", "status", "created_at", "updated_at", "approval", "event_cursor",
+    "resumability", "failure"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "job_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "case_id": {"type": "string"},
+    "sample_id": {"type": "string"},
+    "range_id": {"type": "string"},
+    "run_id": {"type": "string"},
+    "phase": {"enum": ["approval", "verification", "preparing", "starting", "analyzing", "collecting", "recovering", "reporting", "complete", "failed", "attention"]},
+    "status": {"enum": ["pending_approval", "queued", "running", "cancel_requested", "completed", "failed", "needs_attention"]},
+    "created_at": {"type": "string", "format": "date-time"},
+    "updated_at": {"type": "string", "format": "date-time"},
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approved", "expires_at", "scope"],
+      "properties": {
+        "approved": {"type": "boolean"},
+        "approved_at": {"type": "string", "format": "date-time"},
+        "expires_at": {"type": "string", "format": "date-time"},
+        "scope": {"type": "object"}
+      }
+    },
+    "event_cursor": {"type": "integer", "minimum": 0},
+    "resumability": {"enum": ["not_started", "safe_cleanup_only", "complete", "blocked"]},
+    "failure": {"type": ["string", "null"]}
+  }
+}
